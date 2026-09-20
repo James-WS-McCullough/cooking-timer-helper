@@ -1,5 +1,7 @@
 # Sizzle
 
+**Live app: https://james-ws-mccullough.github.io/cooking-timer-helper/**
+
 Fast cooking timers with flip/stir alerts. Vue 3 + Vite, installable as a home-screen web app, works offline, no backend.
 
 ```sh
@@ -12,7 +14,7 @@ npm run icons    # regenerate PWA icons from public/icon.svg
 
 ## Deploying
 
-Pushing to `main` runs `.github/workflows/deploy.yml`, which tests, builds and publishes to GitHub Pages at `https://<user>.github.io/<repo>/`. One-time setup: in the repo's *Settings → Pages*, set **Source** to **GitHub Actions**.
+Pushing to `main` runs `.github/workflows/deploy.yml`, which tests, builds and publishes to GitHub Pages at `https://<user>.github.io/<repo>/`. One-time setup: in the repo's *Settings → Pages*, set **Source** to **GitHub Actions** (not "Deploy from a branch": that publishes the unbuilt source, which renders as a blank page).
 
 ## On a phone
 
@@ -30,7 +32,7 @@ The four files in `public/` can be swapped for any mp3 with the same name.
 | File | Plays |
 | --- | --- |
 | `Beep.mp3` | New timer button; pausing or un-pausing a timer |
-| `Timer Start.mp3` | A timer starts counting: end of the wizard, a preset, confirming a flip that was holding the clock, adding time to a finished timer |
+| `Timer Start.mp3` | A timer starts counting (end of the wizard, a preset, adding time to a finished timer), and pressing Done on any pending card |
 | `Timer Complete.mp3` | Once, when a timer finishes |
 | `Notify.mp3` | When a flip alert appears, then every 15 s while anything is waiting on you (one shared reminder, however many cards) |
 
