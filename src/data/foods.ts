@@ -289,6 +289,7 @@ export const FOODS = [
   ['Turkey crown', 'poultry-leg'],
   ['Vegetables', 'broccoli', 'veg veggies'],
   ['Warm milk', 'glass-of-milk', 'hot'],
+  ['Water', 'droplet', 'boil kettle'],
   ['Wedges', 'potato', 'potato'],
   ['White sauce', 'pot-of-food', 'bechamel'],
   ['Yorkshire puddings', 'bread', 'popovers'],

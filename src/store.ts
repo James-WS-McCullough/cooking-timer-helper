@@ -16,6 +16,8 @@ import {
   type TimerEvent,
 } from './lib/timer'
 import { installAudio, play, soundReady } from './lib/audio'
+import { tidyName } from './lib/format'
+import { rememberTime, type TimeHistory } from './lib/history'
 import { installWakeLock, setWakeLock } from './lib/wakeLock'
 
 export interface Preset {
@@ -30,6 +32,7 @@ const STORAGE_KEY = 'sizzle:v1'
 interface Saved {
   timers: Timer[]
   presets: Preset[]
+  history: TimeHistory // times last used per timer name
 }
 
 function load(): Saved {
@@ -40,12 +43,13 @@ function load(): Saved {
       return {
         timers: Array.isArray(data.timers) ? data.timers : [],
         presets: Array.isArray(data.presets) ? data.presets : [],
+        history: data.history && typeof data.history === 'object' ? data.history : {},
       }
     }
   } catch {
     /* private mode or corrupt data: start fresh */
   }
-  return { timers: [], presets: [] }
+  return { timers: [], presets: [], history: {} }
 }
 
 export const state = reactive({
@@ -83,7 +87,8 @@ function tick(): void {
 
 /** Add a timer. Prepped ones just wait in the list until their play button is pressed. */
 export function startTimer(name: string, durationMs: number, plan: AlertPlan, prepped = false): void {
-  state.timers.push(createTimer(name.trim(), durationMs, plan, Date.now(), prepped))
+  state.timers.push(createTimer(tidyName(name), durationMs, plan, Date.now(), prepped))
+  rememberTime(state.history, name, durationMs)
   void play(prepped ? 'beep' : 'start', true)
   tick()
 }
@@ -100,12 +105,12 @@ export function syncAndStart(): void {
 }
 
 export function savePreset(name: string, durationMs: number, plan: AlertPlan): void {
-  state.presets.push({ id: uid(), name: name.trim(), durationMs, plan: { ...plan } })
+  state.presets.push({ id: uid(), name: tidyName(name), durationMs, plan: { ...plan } })
 }
 
 /** Save, or update the preset with the same name and time (e.g. after adding alerts from the bell). */
 export function upsertPreset(name: string, durationMs: number, plan: AlertPlan): void {
-  const key = name.trim().toLowerCase()
+  const key = tidyName(name).toLowerCase()
   const existing = state.presets.find((p) => p.name.toLowerCase() === key && p.durationMs === durationMs)
   if (existing) existing.plan = { ...plan }
   else savePreset(name, durationMs, plan)
@@ -178,10 +183,11 @@ export function installStore(): void {
   })
 
   watch(
-    () => [state.timers, state.presets],
+    () => [state.timers, state.presets, state.history],
     () => {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ timers: state.timers, presets: state.presets }))
+        const { timers, presets, history } = state
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ timers, presets, history }))
       } catch {
         /* storage full or unavailable */
       }

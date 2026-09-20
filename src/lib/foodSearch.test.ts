@@ -49,7 +49,7 @@ describe('FOODS', () => {
   })
 
   it('offers the plain one-word name first', () => {
-    for (const word of ['Turkey', 'Chicken', 'Eggs', 'Beef', 'Lamb', 'Pork', 'Fish', 'Pasta', 'Cake', 'Pie']) {
+    for (const word of ['Turkey', 'Chicken', 'Eggs', 'Beef', 'Lamb', 'Pork', 'Fish', 'Pasta', 'Cake', 'Pie', 'Water']) {
       expect(searchFoods(FOODS, word)[0]?.[0], word).toBe(word)
     }
   })

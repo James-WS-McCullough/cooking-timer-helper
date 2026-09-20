@@ -19,7 +19,7 @@ import {
   waitProgress,
   type AlertPlan,
 } from './timer'
-import { formatClock, formatDuration, parseDuration } from './format'
+import { formatClock, formatDuration, parseDuration, tidyName } from './format'
 
 const MIN = 60_000
 const T0 = 1_000_000
@@ -279,6 +279,16 @@ describe('format', () => {
     expect(formatClock(59_001)).toBe('1:00')
     expect(formatClock(65 * MIN)).toBe('1:05:00')
     expect(formatDuration(90_000)).toBe('1 min 30 s')
+  })
+
+  it('capitalises names typed entirely in lowercase, and nothing else', () => {
+    expect(tidyName('garlic bread')).toBe('Garlic bread')
+    expect(tidyName('  nanas   secret thing ')).toBe('Nanas secret thing')
+    expect(tidyName('BBQ ribs')).toBe('BBQ ribs')
+    expect(tidyName('mac n Cheese')).toBe('mac n Cheese')
+    expect(tidyName('élan')).toBe('Élan')
+    expect(tidyName('2 eggs')).toBe('2 eggs')
+    expect(tidyName('')).toBe('')
   })
 
   it('parses typed durations', () => {

@@ -12,6 +12,15 @@
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
     <title>Sizzle</title>
+    <script>
+      // Before first paint, so the page never flashes the wrong theme. Mirrors src/lib/theme.ts.
+      try {
+        var t = localStorage.getItem('sizzle:theme')
+        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+        document.documentElement.dataset.theme = t
+        if (t === 'light') document.querySelector('meta[name="theme-color"]').content = '#f7f2ec'
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="app"></div>

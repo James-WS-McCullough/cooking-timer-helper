@@ -6,6 +6,7 @@ import SyncSheet from './components/SyncSheet.vue'
 import SizzleLogo from './components/SizzleLogo.vue'
 import { displayOrder, isPending, statusOf, syncable } from './lib/timer'
 import { play, soundReady } from './lib/audio'
+import { theme, toggleTheme } from './lib/theme'
 import { state } from './store'
 
 // Which wizard is open, if any: start a timer now, or prep one for later.
@@ -187,7 +188,24 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
     <!-- Outside the start screen's own transition: a transformed parent would drag a fixed child around. -->
     <Transition name="welcome">
-      <button v-if="!state.timers.length" class="qr-button" aria-label="Show a QR code to open Sizzle on another device" @click="qrOpen = true">
+      <button
+        v-if="!state.timers.length"
+        class="corner-button theme-button"
+        :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
+        @click="toggleTheme"
+      >
+        <!-- Shows where a tap takes you: the sun while it's dark, the moon while it's light -->
+        <svg v-if="theme === 'dark'" viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="4.2" />
+          <path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6" />
+        </svg>
+        <svg v-else viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" />
+        </svg>
+      </button>
+    </Transition>
+    <Transition name="welcome">
+      <button v-if="!state.timers.length" class="corner-button qr-button" aria-label="Show a QR code to open Sizzle on another device" @click="qrOpen = true">
         <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
           <rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1" />
           <rect x="14" y="3.5" width="6.5" height="6.5" rx="1" />
@@ -305,8 +323,8 @@ h1 {
   color: var(--text-dim);
 }
 
-/* Tucked in the corner of the start screen: hand the app to another device. */
-.qr-button {
+/* Tucked in the corner of the start screen: light/dark, and hand the app to another device. */
+.corner-button {
   position: fixed;
   right: max(16px, env(safe-area-inset-right));
   bottom: calc(16px + env(safe-area-inset-bottom));
@@ -320,8 +338,12 @@ h1 {
   color: var(--text-dim);
 }
 
-.qr-button:active {
+.corner-button:active {
   transform: scale(0.94);
+}
+
+.theme-button {
+  right: calc(max(16px, env(safe-area-inset-right)) + 56px + 10px);
 }
 
 .dock {

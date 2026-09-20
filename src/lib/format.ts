@@ -46,3 +46,14 @@ export function parseDuration(text: string): number | null {
   const MAX = 24 * 3600
   return seconds > 0 && seconds <= MAX ? seconds * 1000 : null
 }
+
+/**
+ * Typed names are usually dashed off in lowercase. If there isn't a single
+ * capital in it, give it one at the front ("garlic bread" → "Garlic bread");
+ * anything the cook capitalised themselves ("BBQ ribs", "mac n Cheese") is left alone.
+ */
+export function tidyName(text: string): string {
+  const name = text.trim().replace(/\s+/g, ' ')
+  if (!name || name !== name.toLowerCase()) return name
+  return name.charAt(0).toUpperCase() + name.slice(1)
+}

@@ -25,9 +25,15 @@ HTTPS is required for offline support and for keeping the screen awake; plain `h
 - The screen stays on while anything is counting down. A home-screen web app cannot make sound once the phone is locked or the app is in the background, so leave it open on the counter.
 - Timers are timestamp-based and saved on the device: closing, reloading or sleeping never loses time.
 
+## Light and dark
+
+Sizzle follows the device's light/dark setting until the toggle on the start screen (next to the QR button) is used; after that the choice sticks on that device. The theme is a `data-theme` attribute on `<html>`, set before first paint by a small script in `index.html` and kept current by `src/lib/theme.ts`; the light palette is the `[data-theme='light']` block in `src/style.css`.
+
 ## Making a timer, and alerts
 
-A timer takes three taps: *New timer* → a name (chip, search, or skip) → a time. Mid-way alerts are not part of that: tap the **bell** on a timer's card to add, change or remove them (halfway, or every N minutes; Flip/Stir/Check/Baste; optionally holding the clock until confirmed). The bell works on running and prepped timers, only future alert times fire, and the editor can save the result as a preset.
+A timer takes three taps: *New timer* → a name (chip, search, or skip) → a time. The time screen is grouped so it can be read at a glance: the times last used for that name (remembered on the device, up to three), every minute from 1 to 10, then a row of longer cooks, with a box for anything else. Mid-way alerts are not part of that: tap the **bell** on a timer's card to add, change or remove them (halfway, or every N minutes; Flip/Stir/Check/Baste; optionally holding the clock until confirmed). The bell works on running and prepped timers, only future alert times fire, and the editor can save the result as a preset.
+
+Searching is built for a keyboard being up: the sheet tracks the *visible* viewport, the header folds into the search row, and the typed text is offered as a **Use "…"** row instead of a footer button. When the visible area is short (under 520px, e.g. a landscape tablet or phone with the keyboard open) the sheet goes edge to edge and results flow in columns.
 
 ## Prepping
 

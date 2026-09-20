@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { elapsedMs, NO_ALERTS, type AlertKind, type AlertPlan, type Timer } from '../lib/timer'
-import { formatClock, formatDuration, parseDuration } from '../lib/format'
+import { formatClock, formatDuration, parseDuration, tidyName } from '../lib/format'
 import { removePreset, savePreset, setTimerPlan, startPreset, startTimer, state, upsertPreset, type Preset } from '../store'
 import FoodIcon from './FoodIcon.vue'
 import { FOODS } from '../data/foods'
 import { searchFoods } from '../lib/foodSearch'
+import { recentTimes } from '../lib/history'
 
 // Two jobs, one sheet:
 //  - making a timer (name → time). With `prep`, it's built now and started later, in its own colour.
@@ -15,7 +16,10 @@ const props = defineProps<{ prep?: boolean; alertsFor?: Timer }>()
 const emit = defineEmits<{ close: [] }>()
 
 const MIN = 60_000
-const TIMES = [1, 2, 3, 4, 5, 8, 10, 15, 20, 25]
+// Two groups rather than one wall of tiles: every minute up to ten (a complete run
+// is quicker to scan than one with gaps), then the usual longer cooks on their own row.
+const SHORTER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+const LONGER = [12, 15, 20, 25, 30]
 // Three rows of specific foods, then a row that covers most other things people time.
 const NAMES = [
   ...['Potatoes', 'Sausages', 'Chicken', 'Fish'],
@@ -58,6 +62,13 @@ function pickName(n: string) {
 const searching = ref(false)
 const searchBox = ref<HTMLInputElement>()
 const results = computed(() => searchFoods(FOODS, name.value))
+
+// Whatever's typed can be the name as-is. Offered as the first row unless the
+// list already has exactly that, in which case the list's own row says it better.
+const typed = computed(() => tidyName(name.value))
+const offerTyped = computed(
+  () => typed.value !== '' && !results.value.some(([food]) => food.toLowerCase() === typed.value.toLowerCase()),
+)
 
 function stopSearching() {
   searching.value = false
@@ -126,12 +137,14 @@ function applyAlerts() {
 }
 
 // ---- Time ----
+// What this name was timed for last time(s): usually exactly what's wanted again.
+const lastTimes = computed(() => recentTimes(state.history, name.value))
 const customTime = ref('')
 const customMs = computed(() => parseDuration(customTime.value))
 const keepAsPreset = ref(false)
 
 const timeProblem = computed(() =>
-  customTime.value.trim() && customMs.value === null ? 'Enter minutes (12 or 1.5) or m:ss (1:30)' : '',
+  customTime.value.trim() && customMs.value === null ? 'Enter minutes (45 or 1.5) or m:ss (1:30)' : '',
 )
 
 function start(ms: number | null) {
@@ -188,6 +201,7 @@ const subject = computed(() => {
 function onSubmit() {
   if (step.value === 'name') {
     searching.value = false
+    name.value = tidyName(name.value) // so the next screen already shows it as it will appear
     go('time')
   } else if (step.value === 'details' && !detailsProblem.value) applyAlerts()
   else if (step.value === 'time' && !timeProblem.value) start(customMs.value)
@@ -200,9 +214,17 @@ function onKey(e: KeyboardEvent) {
 // On phones the on-screen keyboard covers the bottom of the page without resizing
 // it, which would bury most of the sheet. Track the area that's actually visible
 // and fit the sheet to that instead.
+//
+// When what's left is short (a landscape tablet with the keyboard up leaves about
+// 340px), the search switches to a compact layout: the sheet takes the whole
+// visible area, edge to edge, and results flow in columns instead of one list.
 const scrim = ref<HTMLElement>()
+const shortView = ref(false)
+const compact = computed(() => searching.value && shortView.value)
+
 function fitToVisibleArea() {
   const vv = window.visualViewport
+  shortView.value = (vv?.height ?? window.innerHeight) < 520
   if (!vv || !scrim.value) return
   scrim.value.style.setProperty('--visible-height', `${vv.height}px`)
   scrim.value.style.setProperty('--visible-top', `${vv.offsetTop}px`)
@@ -223,9 +245,10 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="scrim" class="scrim" @click.self="emit('close')">
-    <form class="sheet" :class="{ prep: prep || alertsFor?.prepped }" role="dialog" aria-modal="true" aria-labelledby="sheet-title" @submit.prevent="onSubmit">
-      <header class="head">
-        <button v-if="step === 'time' || step === 'details' || searching" type="button" class="nav" aria-label="Back" @click="back">
+    <form class="sheet" :class="{ prep: prep || alertsFor?.prepped, compact }" role="dialog" aria-modal="true" aria-labelledby="sheet-title" @submit.prevent="onSubmit">
+      <!-- While searching, every pixel goes to results: the header's back arrow moves into the search row -->
+      <header v-show="!searching" class="head">
+        <button v-if="step === 'time' || step === 'details'" type="button" class="nav" aria-label="Back" @click="back">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
@@ -247,7 +270,13 @@ onBeforeUnmount(() => {
 
           <!-- 1 · Name -->
           <template v-if="step === 'name'">
-            <div class="search">
+            <div class="search" :class="{ active: searching }">
+              <button v-if="searching" type="button" class="nav" aria-label="Back to the name grid" @click="stopSearching">
+                <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+                  <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <div class="search-box">
               <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
                 <circle cx="10.5" cy="10.5" r="6.5" />
                 <path d="m15.5 15.5 5 5" />
@@ -265,6 +294,7 @@ onBeforeUnmount(() => {
                 @focus="searching = true"
               />
               <button v-if="name" type="button" class="clear" aria-label="Clear" @click="((name = ''), searchBox?.focus())">✕</button>
+              </div>
             </div>
 
             <template v-if="!searching">
@@ -314,15 +344,24 @@ onBeforeUnmount(() => {
             </template>
 
             <ul v-else class="results">
+              <!-- Replaces the Next button while searching, so it costs one row instead of a footer -->
+              <li v-if="offerTyped">
+                <button type="submit" class="result use">
+                  <span class="use-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="18" height="18">
+                      <path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </span>
+                  <span class="use-text">Use “{{ typed }}”</span>
+                </button>
+              </li>
               <li v-for="[food, icon] in results" :key="food">
                 <button type="button" class="result" @click="pickName(food)">
                   <FoodIcon :icon="icon" class="result-icon" />
                   {{ food }}
                 </button>
               </li>
-              <li v-if="!results.length" class="no-results">
-                Nothing in the list matches. Press <strong>Next</strong> to call it “{{ name.trim() }}”.
-              </li>
+              <li v-if="!results.length" class="no-results">Nothing in the list matches, but any name works.</li>
             </ul>
           </template>
 
@@ -398,17 +437,32 @@ onBeforeUnmount(() => {
 
           <!-- 2 · Time: tapping a number starts (or preps) the timer -->
           <template v-else>
-            <div class="times">
-              <button
-                v-for="m in TIMES"
-                :key="m"
-                type="button"
-                class="chip big-num"
-                @click="start(m * MIN)"
-              >
-                {{ m }}
-              </button>
-            </div>
+            <section v-if="lastTimes.length">
+              <h3>Last time</h3>
+              <div class="last-times">
+                <button v-for="ms in lastTimes" :key="ms" type="button" class="chip last-time tabular" @click="start(ms)">
+                  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 12a8 8 0 1 0 2.6-5.9" />
+                    <path d="M4 4.5v4h4" />
+                  </svg>
+                  {{ formatDuration(ms) }}
+                </button>
+              </div>
+            </section>
+
+            <section>
+              <h3>Shorter</h3>
+              <div class="times">
+                <button v-for="m in SHORTER" :key="m" type="button" class="chip big-num" @click="start(m * MIN)">{{ m }}</button>
+              </div>
+            </section>
+
+            <section>
+              <h3>Longer</h3>
+              <div class="times longer">
+                <button v-for="m in LONGER" :key="m" type="button" class="chip big-num" @click="start(m * MIN)">{{ m }}</button>
+              </div>
+            </section>
             <input
               v-model="customTime"
               class="field"
@@ -416,7 +470,7 @@ onBeforeUnmount(() => {
               inputmode="decimal"
               autocomplete="off"
               enterkeyhint="go"
-              placeholder="Other minutes: 12, 1.5 or 1:30"
+              placeholder="Other minutes: 45, 1.5 or 1:30"
               aria-label="Custom time in minutes"
             />
             <button type="button" class="switch-row" role="switch" :aria-checked="keepAsPreset" @click="keepAsPreset = !keepAsPreset">
@@ -430,7 +484,7 @@ onBeforeUnmount(() => {
         </div>
       </Transition>
 
-      <footer v-if="step === 'name' && (!searching || name.trim())" class="foot">
+      <footer v-if="step === 'name' && !searching" class="foot">
         <button type="submit" class="next">{{ name.trim() ? 'Next' : 'Skip name' }}</button>
       </footer>
       <footer v-else-if="step === 'details'" class="foot">
@@ -606,7 +660,26 @@ h3 {
   color: var(--text-dim);
 }
 
-.search svg {
+.search.active {
+  /* The header is hidden while searching, so this row is the top of the sheet. */
+  margin-top: 0;
+  padding-top: 12px;
+}
+
+.search > .nav {
+  flex: none;
+  margin-left: -12px;
+}
+
+.search-box {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.search-box > svg {
   position: absolute;
   left: 14px;
   pointer-events: none;
@@ -660,6 +733,56 @@ h3 {
 
 .result-icon {
   font-size: 1.35rem;
+}
+
+.result.use {
+  color: var(--accent-text);
+}
+
+.use-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.9rem; /* same footprint as a food icon, so the names line up */
+  height: 1.9rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.use-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Compact search: a short visible area (keyboard up on a landscape tablet or phone).
+   The sheet becomes the whole visible area and results flow in columns. */
+.sheet.compact {
+  max-width: none;
+  height: var(--visible-height, 100dvh);
+  border-radius: 0;
+  border-top: 0;
+}
+
+.sheet.compact .body {
+  gap: 8px;
+  padding-inline: max(20px, env(safe-area-inset-left)) max(20px, env(safe-area-inset-right));
+}
+
+.sheet.compact .search.active {
+  padding-top: calc(8px + env(safe-area-inset-top));
+}
+
+.sheet.compact .results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); /* wide enough for "Shortcrust pastry" on one line */
+  gap: 2px 8px;
+}
+
+.sheet.compact .result {
+  min-height: 46px;
+  font-size: 1.05rem;
 }
 
 .no-results {
@@ -745,10 +868,43 @@ h3 {
 }
 
 .chip.big-num {
-  min-height: 72px;
+  min-height: 60px;
   padding: 0;
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   font-weight: 700;
+}
+
+/* One tap to repeat last time: the widest, most obvious thing on the screen. */
+.last-times {
+  display: flex;
+  gap: 8px;
+}
+
+.chip.last-time {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 60px;
+  padding: 0 10px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--surface));
+  color: var(--accent-text);
+  font-size: 1.25rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+/* With two or three remembered times, the first is still "last time"; the rest step back. */
+.chip.last-time:not(:first-child) {
+  flex: 0 1 auto;
+  padding: 0 16px;
+  font-size: 1.05rem;
+}
+
+.chip.last-time:not(:first-child) svg {
+  display: none;
 }
 
 .chip:disabled {
@@ -772,7 +928,7 @@ h3 {
 }
 
 .every-field {
-  min-height: 72px;
+  min-height: 60px;
   padding: 0 8px;
   text-align: center;
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { elapsedMs, firingAlert, nextAlert, remainingMs, statusOf, waitProgress, type Timer } from '../lib/timer'
 import { formatClock, formatDuration, formatSince } from '../lib/format'
 import { acknowledgeTimer, completeTimer, extendTimer, pauseTimer, removeTimer, resumeTimer } from '../store'
@@ -52,15 +52,32 @@ const pendingNote = computed(() => {
   return `${formatClock(remaining.value)} left`
 })
 
-// Two-tap delete: the first tap arms it for a few seconds, so a stray touch can't kill a timer.
-const armed = ref(false)
-let disarm: ReturnType<typeof setTimeout> | undefined
-function onRemove() {
-  if (armed.value) return removeTimer(props.timer.id)
-  armed.value = true
-  disarm = setTimeout(() => (armed.value = false), 3000)
+// Removing takes two taps so a stray touch can't kill a timer. The first dims the
+// card like a small modal with a Remove button in its centre; a tap anywhere else
+// (on the card or off it) backs out, and it backs out by itself if left alone, so a
+// live Remove button is never sitting there waiting for an elbow.
+const confirming = ref(false)
+const confirmButton = ref<HTMLElement>()
+let backOut: ReturnType<typeof setTimeout> | undefined
+
+function dismissOnOutsideTap(e: Event) {
+  if (!confirmButton.value?.contains(e.target as Node)) confirming.value = false
 }
-onBeforeUnmount(() => clearTimeout(disarm))
+
+watch(confirming, (on) => {
+  clearTimeout(backOut)
+  if (on) {
+    backOut = setTimeout(() => (confirming.value = false), 5000)
+    document.addEventListener('pointerdown', dismissOnOutsideTap, true)
+  } else {
+    document.removeEventListener('pointerdown', dismissOnOutsideTap, true)
+  }
+})
+
+onBeforeUnmount(() => {
+  clearTimeout(backOut)
+  document.removeEventListener('pointerdown', dismissOnOutsideTap, true)
+})
 </script>
 
 <template>
@@ -110,14 +127,7 @@ onBeforeUnmount(() => clearTimeout(disarm))
             <path d="M10 19.5a2.2 2.2 0 0 0 4 0" fill="none" />
           </svg>
         </button>
-        <button
-          class="remove"
-          :class="{ armed }"
-          :aria-label="armed ? `Confirm remove ${title}` : `Remove ${title}`"
-          @click="onRemove"
-        >
-          {{ armed ? 'Remove?' : '✕' }}
-        </button>
+        <button class="remove" :aria-label="`Remove ${title}`" @click="confirming = true">✕</button>
       </header>
 
       <div class="main">
@@ -149,6 +159,13 @@ onBeforeUnmount(() => clearTimeout(disarm))
           </button>
         </span>
       </div>
+
+      <!-- "Are you sure?", as a little modal over this card only -->
+      <Transition name="confirm">
+        <div v-if="confirming" class="confirm" role="alertdialog" :aria-label="`Remove ${title}?`">
+          <button ref="confirmButton" class="confirm-button" @click="removeTimer(timer.id)">Remove</button>
+        </div>
+      </Transition>
 
       <div class="bar" aria-hidden="true">
         <div class="fill" :style="{ width: `${progress * 100}%` }" />
@@ -241,10 +258,65 @@ onBeforeUnmount(() => clearTimeout(disarm))
   font-weight: 600;
 }
 
-.remove.armed {
+/* Covers the card (and its border), so everything under it is dimmed and untappable.
+   Its own red border is drawn on top of the blur, so it stays crisp: that's what
+   says which card is about to go. */
+.confirm {
+  position: absolute;
+  inset: -2px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  border: 3px solid var(--danger);
+  border-radius: calc(var(--radius) + 2px);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  -webkit-backdrop-filter: blur(1.5px);
+  backdrop-filter: blur(1.5px);
+}
+
+.confirm-button {
+  min-width: 160px;
+  min-height: 56px;
+  padding: 0 28px;
+  border-radius: 28px;
   background: var(--danger);
   color: #fff;
-  margin-right: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.4);
+}
+
+.confirm-button:active {
+  transform: scale(0.95);
+}
+
+/* The dim fades; the button pops in over it and ducks out a little quicker. */
+.confirm-enter-active {
+  transition: opacity 0.18s ease;
+}
+
+.confirm-leave-active {
+  transition: opacity 0.14s ease;
+}
+
+.confirm-enter-from,
+.confirm-leave-to {
+  opacity: 0;
+}
+
+.confirm-enter-active .confirm-button {
+  animation: confirm-pop 0.3s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+
+.confirm-leave-active .confirm-button {
+  transition: transform 0.14s ease-in;
+  transform: scale(0.85);
+}
+
+@keyframes confirm-pop {
+  from {
+    transform: scale(0.6);
+  }
 }
 
 .main {
@@ -651,6 +723,9 @@ onBeforeUnmount(() => clearTimeout(disarm))
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .confirm-enter-active .confirm-button {
+    animation: none;
+  }
   .card.cards-leave-active,
   .card.is-finished.cards-leave-active {
     animation: give-way 0.2s ease-out forwards;

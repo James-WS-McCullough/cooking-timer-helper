@@ -1,5 +1,5 @@
 :root {
-  color-scheme: dark light;
+  color-scheme: dark;
 
   --bg: #14110f;
   --surface: #211c19;
@@ -32,24 +32,25 @@
   line-height: 1.35;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f7f2ec;
-    --surface: #ffffff;
-    --surface-2: #efe8df;
-    --border: #e0d6ca;
-    --text: #1f1a17;
-    --text-dim: #6f655c;
-    --accent-text: #0b6cbf; /* the brand blue is too pale to read on white */
-    --sync: #a88bfa;
-    --sync-text: #6a3fd1;
-    --prep: #ffd21f;
-    --prep-text: #7a5d00;
-    --prep-line: #d4a900;
-    --alert: #ffb829;
-    --done: #2fc466;
-    --danger: #d23a2c;
-  }
+/* data-theme is always set (index.html does it before first paint, src/lib/theme.ts
+   keeps it current): the device's preference, unless the cook has picked one. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f7f2ec;
+  --surface: #ffffff;
+  --surface-2: #efe8df;
+  --border: #e0d6ca;
+  --text: #1f1a17;
+  --text-dim: #6f655c;
+  --accent-text: #0b6cbf; /* the brand blue is too pale to read on white */
+  --sync: #a88bfa;
+  --sync-text: #6a3fd1;
+  --prep: #ffd21f;
+  --prep-text: #7a5d00;
+  --prep-line: #d4a900;
+  --alert: #ffb829;
+  --done: #2fc466;
+  --danger: #d23a2c;
 }
 
 *,
