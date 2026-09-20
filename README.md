@@ -36,10 +36,15 @@ The four files in `public/` can be swapped for any mp3 with the same name.
 
 Pending cards shimmer each time `Notify` or `Timer Complete` plays.
 
+## Icons
+
+Food icons are [Fluent Emoji](https://github.com/microsoft/fluentui-emoji) (flat style, MIT © Microsoft), pulled in through `unplugin-icons` so only the ones imported in `src/components/FoodIcon.vue` ship. `src/lib/foodIcons.ts` decides which icon a timer name gets, including typed names ("Wedges" → potato); add a keyword or a new rule there.
+
 ## Layout
 
 - `src/lib/timer.ts` – pure timer engine (alerts, holding, attention events); `timer.test.ts` covers it
 - `src/lib/audio.ts` – sound effects via Web Audio, mobile audio unlock
 - `src/lib/wakeLock.ts` – screen wake lock
 - `src/store.ts` – reactive state, persistence, 250 ms tick
-- `src/components/` – `TimerCard.vue`, `NewTimerSheet.vue`
+- `src/lib/foodIcons.ts` – timer name → icon matching; `foodIcons.test.ts` covers it
+- `src/components/` – `TimerCard.vue`, `NewTimerSheet.vue`, `FoodIcon.vue`

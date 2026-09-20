@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { AlertKind, AlertPlan } from '../lib/timer'
 import { formatClock, formatDuration, parseDuration } from '../lib/format'
 import { removePreset, savePreset, startPreset, startTimer, state, type Preset } from '../store'
+import FoodIcon from './FoodIcon.vue'
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -188,6 +189,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <div class="presets">
                 <div v-for="p in state.presets" :key="p.id" class="preset-wrap">
                   <button type="button" class="preset" :disabled="editingPresets" @click="onPreset(p)">
+                    <FoodIcon :name="p.name" class="preset-icon" />
                     <strong>{{ p.name || 'Timer' }}</strong>
                     <span>{{ describe(p) }}</span>
                   </button>
@@ -206,6 +208,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
             <div class="names">
               <button v-for="n in NAMES" :key="n" type="button" class="chip" :aria-pressed="name === n" @click="pickName(n)">
+                <FoodIcon :name="n" class="chip-icon" />
                 {{ n }}
               </button>
             </div>
@@ -284,7 +287,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
           <!-- 4 · Time: tapping a number starts the timer -->
           <template v-else>
-            <p class="recap">{{ recap }}</p>
+            <p class="recap"><FoodIcon :name="name" />{{ recap }}</p>
             <div class="times">
               <button
                 v-for="m in TIMES"
@@ -353,7 +356,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   flex-direction: column;
   width: 100%;
   max-width: 560px;
-  height: min(660px, calc(100dvh - env(safe-area-inset-top) - 12px));
+  height: min(680px, calc(100dvh - env(safe-area-inset-top) - 12px));
   border-radius: 24px 24px 0 0;
   background: var(--surface);
   overflow: hidden;
@@ -455,13 +458,33 @@ h3 {
 
 .names {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
 }
 
+/* Four across needs a slightly smaller label; the icon does the recognising. */
 .names .chip {
-  min-height: 58px;
-  padding: 0 4px;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 359px) {
+  .names {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.names .chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 84px;
+  padding: 6px 4px;
+}
+
+.chip-icon {
+  font-size: 1.5rem; /* icon is 1.4em of this */
 }
 
 .options {
@@ -518,6 +541,9 @@ h3 {
 }
 
 .recap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: -8px 0 0;
   color: var(--text-dim);
   font-weight: 600;
@@ -568,17 +594,21 @@ h3 {
 }
 
 .preset {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 10px;
   min-height: 60px;
-  max-width: 220px;
-  padding: 8px 16px;
+  max-width: 240px;
+  padding: 8px 16px 8px 12px;
   border-radius: var(--radius-sm);
   border: 2px solid var(--accent);
   text-align: left;
+}
+
+.preset-icon {
+  grid-row: span 2;
+  font-size: 1.5rem;
 }
 
 .preset strong,
@@ -728,7 +758,11 @@ h3 {
     font-size: 1.4rem;
   }
   .names .chip {
-    min-height: 50px;
+    min-height: 64px;
+    gap: 1px;
+  }
+  .chip-icon {
+    font-size: 1.15rem;
   }
   .option {
     min-height: 80px;
