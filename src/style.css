@@ -1,0 +1,126 @@
+:root {
+  color-scheme: dark light;
+
+  --bg: #14110f;
+  --surface: #211c19;
+  --surface-2: #2e2723;
+  --border: #3a322d;
+  --text: #f4ede4;
+  --text-dim: #a89d92;
+  --accent: #38a1f2;
+  --on-accent: #04182a;
+  --accent-text: #38a1f2; /* accent used as text on a surface */
+  --alert: #ffc145; /* flip / stir: act, then carry on */
+  --on-alert: #2a1c00;
+  --done: #5fe08a; /* finished: food is ready */
+  --on-done: #04240f;
+  --danger: #ff6b5e;
+
+  --radius: 18px;
+  --radius-sm: 12px;
+  --tap: 52px; /* minimum touch target; fingers may be wet or floury */
+
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f7f2ec;
+    --surface: #ffffff;
+    --surface-2: #efe8df;
+    --border: #e0d6ca;
+    --text: #1f1a17;
+    --text-dim: #6f655c;
+    --accent-text: #0b6cbf; /* the brand blue is too pale to read on white */
+    --alert: #ffb829;
+    --done: #2fc466;
+    --danger: #d23a2c;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  touch-action: manipulation; /* no double-tap zoom delay */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Shared pill used for every pick-one choice (times, names, alert options). */
+.chip {
+  min-height: var(--tap);
+  padding: 0 18px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 2px solid transparent;
+  font-weight: 600;
+  transition:
+    background 0.12s,
+    transform 0.08s;
+}
+
+.chip:active {
+  transform: scale(0.96);
+}
+
+.chip[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.field {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 16px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--border);
+  background: var(--bg);
+  font-size: 17px; /* ≥16px stops iOS zooming on focus */
+}
+
+.field::placeholder {
+  color: var(--text-dim);
+}
+
+.field:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
