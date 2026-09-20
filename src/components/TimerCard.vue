@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { elapsedMs, firingAlert, nextAlert, remainingMs, statusOf, type Timer } from '../lib/timer'
 import { formatClock, formatDuration, formatSince } from '../lib/format'
-import { acknowledgeTimer, extendTimer, pauseTimer, removeTimer, resumeTimer } from '../store'
+import { acknowledgeTimer, completeTimer, extendTimer, pauseTimer, removeTimer, resumeTimer } from '../store'
 import FoodIcon from './FoodIcon.vue'
 
 const props = defineProps<{ timer: Timer; now: number; pulse: number }>()
@@ -58,7 +58,7 @@ onBeforeUnmount(() => clearTimeout(disarm))
       </header>
 
       <template v-if="status === 'finished'">
-        <button class="big" @click="removeTimer(timer.id)">Done</button>
+        <button class="big" @click="completeTimer(timer.id)">Done</button>
         <div class="more">
           <button class="ghost" @click="extendTimer(timer.id, MIN / 2)">+30s</button>
           <button class="ghost" @click="extendTimer(timer.id, MIN)">+1 min</button>

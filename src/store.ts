@@ -109,13 +109,18 @@ function withTimer(id: string, fn: (t: Timer, now: number) => void): void {
   tick()
 }
 
-/** "Done" on a flip. If the alert was holding the clock, it starts counting again. */
+/** "Done" on a flip: back to cooking. If the alert was holding the clock, it starts counting again. */
 export const acknowledgeTimer = (id: string) =>
   withTimer(id, (t, now) => {
-    const held = t.pausedBy === 'alert'
     acknowledge(t, now)
-    if (held) void play('start', true)
+    void play('start', true)
   })
+
+/** "Done" on a finished timer. Same confirming sound as any other Done, then the card goes. */
+export function completeTimer(id: string): void {
+  void play('start', true)
+  removeTimer(id)
+}
 
 export const pauseTimer = (id: string) =>
   withTimer(id, (t, now) => {
