@@ -8,6 +8,11 @@ import FoodIcon from './FoodIcon.vue'
 const emit = defineEmits<{ close: [] }>()
 
 const plan = computed(() => syncPlan(state.timers))
+
+// The list is there to show the idea, not to be a schedule: past a few rows it
+// would push the button off the screen. Every timer still gets synced.
+const SHOWN = 4
+const shown = computed(() => plan.value.slice(0, SHOWN))
 const total = computed(() => Math.max(0, ...plan.value.map((p) => p.timer.durationMs)))
 
 function go() {
@@ -36,7 +41,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </p>
 
       <ol class="plan">
-        <li v-for="{ timer, delayMs } in plan" :key="timer.id">
+        <li v-for="{ timer, delayMs } in shown" :key="timer.id">
           <FoodIcon :name="timer.name" class="icon" />
           <span class="what">
             <strong>{{ timer.name || 'Timer' }}</strong>
@@ -44,6 +49,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </span>
           <span class="when" :class="{ now: delayMs === 0 }">{{ delayMs === 0 ? 'Starts now' : `in ${formatDuration(delayMs)}` }}</span>
         </li>
+        <li v-if="plan.length > SHOWN" class="more">...and so on.</li>
       </ol>
 
       <p class="foot-note">
@@ -139,6 +145,12 @@ h2 {
   background: color-mix(in srgb, var(--sync) 11%, var(--surface));
 }
 
+.plan li.more {
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
 .icon {
   font-size: 1.3rem;
 }
@@ -179,7 +191,13 @@ h2 {
   color: var(--text-dim);
 }
 
+/* Always reachable: if the panel has to scroll on a short screen, the button stays
+   put and the explanation scrolls behind it. */
 .go {
+  position: sticky;
+  bottom: 0; /* measured from inside the panel's padding, which already clears the safe area */
+  flex: none;
+  box-shadow: 0 40px 0 var(--surface); /* hides anything scrolling past underneath it */
   width: 100%;
   min-height: 68px;
   border-radius: var(--radius-sm);
@@ -191,6 +209,24 @@ h2 {
 
 .go:active {
   transform: scale(0.98);
+}
+
+@media (max-height: 700px) {
+  .lead {
+    margin-bottom: 12px;
+    font-size: 0.95rem;
+    line-height: 1.4;
+  }
+  .plan li {
+    min-height: 48px;
+    padding-block: 3px;
+  }
+  .foot-note {
+    margin: 10px 0 12px;
+  }
+  .go {
+    min-height: 60px;
+  }
 }
 
 @keyframes fade {

@@ -175,7 +175,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </svg>
           {{ prepping ? 'Prep another' : 'New timer' }}
         </button>
-        <button v-if="prepping" class="prep as-new" aria-label="New timer that starts now" @click="openSheet('start')">New</button>
+        <button v-if="prepping" class="prep as-new" aria-label="Quick timer that starts now" @click="openSheet('start')">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" />
+          </svg>
+          Quick
+        </button>
         <button v-else class="prep" aria-label="Prep a timer" @click="openSheet('prep')">Prep</button>
       </div>
     </Transition>
@@ -356,6 +361,30 @@ h1 {
   flex: 1;
 }
 
+/* Very narrow phones: keep both dock labels on one line. */
+@media (max-width: 350px) {
+  .dock {
+    gap: 8px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .dock .new {
+    gap: 6px;
+    font-size: 1.1rem;
+    white-space: nowrap;
+  }
+  .dock .new svg {
+    width: 22px;
+    height: 22px;
+  }
+  .dock .prep {
+    padding: 0 16px;
+  }
+  .dock .prep.as-new {
+    padding: 0 16px 0 12px;
+  }
+}
+
 /* Prepping: the two dock buttons trade looks as well as jobs. */
 .new.as-prep {
   background: var(--prep);
@@ -363,6 +392,10 @@ h1 {
 }
 
 .prep.as-new {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 22px 0 18px;
   border: 2px solid color-mix(in srgb, var(--accent) 70%, var(--bg));
   background: color-mix(in srgb, var(--accent) 12%, var(--bg));
   color: var(--accent-text);
