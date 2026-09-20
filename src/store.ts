@@ -7,7 +7,9 @@ import {
   isPending,
   pause,
   resume,
+  setPlan,
   statusOf,
+  syncFinish,
   uid,
   type AlertPlan,
   type Timer,
@@ -67,7 +69,7 @@ function tick(): void {
     if (event === 'finished' || (event && !arrived)) arrived = event
   }
 
-  // A finish announces itself once; a new flip and every reminder after use Notify.
+  // A finish announces itself once; a new flip, a dish due to go on, and every reminder after use Notify.
   const remind = !arrived && now >= nextNotifyAt && state.timers.some(isPending)
   if (arrived || remind) {
     void play(arrived === 'finished' ? 'complete' : 'notify')
@@ -76,21 +78,37 @@ function tick(): void {
   }
 
   // Anything counting down or waiting on the cook keeps the screen awake.
-  setWakeLock(state.timers.some((t) => statusOf(t) !== 'paused'))
+  setWakeLock(state.timers.some((t) => !['paused', 'prepped'].includes(statusOf(t))))
 }
 
-export function startTimer(name: string, durationMs: number, plan: AlertPlan): void {
-  state.timers.push(createTimer(name.trim(), durationMs, plan, Date.now()))
+/** Add a timer. Prepped ones just wait in the list until their play button is pressed. */
+export function startTimer(name: string, durationMs: number, plan: AlertPlan, prepped = false): void {
+  state.timers.push(createTimer(name.trim(), durationMs, plan, Date.now(), prepped))
+  void play(prepped ? 'beep' : 'start', true)
+  tick()
+}
+
+export function startPreset(preset: Preset, prepped = false): void {
+  startTimer(preset.name, preset.durationMs, preset.plan, prepped)
+}
+
+/** Sync Finish: longest prepped timer starts now, the rest get pre-timers so everything lands together. */
+export function syncAndStart(): void {
+  syncFinish(state.timers, Date.now())
   void play('start', true)
   tick()
 }
 
-export function startPreset(preset: Preset): void {
-  startTimer(preset.name, preset.durationMs, preset.plan)
-}
-
 export function savePreset(name: string, durationMs: number, plan: AlertPlan): void {
   state.presets.push({ id: uid(), name: name.trim(), durationMs, plan: { ...plan } })
+}
+
+/** Save, or update the preset with the same name and time (e.g. after adding alerts from the bell). */
+export function upsertPreset(name: string, durationMs: number, plan: AlertPlan): void {
+  const key = name.trim().toLowerCase()
+  const existing = state.presets.find((p) => p.name.toLowerCase() === key && p.durationMs === durationMs)
+  if (existing) existing.plan = { ...plan }
+  else savePreset(name, durationMs, plan)
 }
 
 export function removePreset(id: string): void {
@@ -128,9 +146,17 @@ export const pauseTimer = (id: string) =>
     void play('beep', true)
   })
 
+/** Play button: un-pauses a timer, or sets a prepped one going for the first time. */
 export const resumeTimer = (id: string) =>
   withTimer(id, (t, now) => {
+    const firstStart = t.prepped
     resume(t, now)
+    void play(firstStart ? 'start' : 'beep', true)
+  })
+
+export const setTimerPlan = (id: string, plan: AlertPlan) =>
+  withTimer(id, (t, now) => {
+    setPlan(t, plan, now)
     void play('beep', true)
   })
 

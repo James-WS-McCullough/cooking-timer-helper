@@ -10,6 +10,13 @@
   --accent: #38a1f2;
   --on-accent: #04182a;
   --accent-text: #38a1f2; /* accent used as text on a surface */
+  --prep: #ffe04a; /* prepped for later: lemon, clear of the amber alert and the blue accent */
+  --on-prep: #2b2400;
+  --prep-text: #ffe04a;
+  --prep-line: #c9b13f; /* dashed outlines */
+  --sync: #b79bff; /* Sync Finish and its pre-timers: violet, clear of every other state */
+  --on-sync: #1c0f3f;
+  --sync-text: #c4adff;
   --alert: #ffc145; /* flip / stir: act, then carry on */
   --on-alert: #2a1c00;
   --done: #5fe08a; /* finished: food is ready */
@@ -34,6 +41,11 @@
     --text: #1f1a17;
     --text-dim: #6f655c;
     --accent-text: #0b6cbf; /* the brand blue is too pale to read on white */
+    --sync: #a88bfa;
+    --sync-text: #6a3fd1;
+    --prep: #ffd21f;
+    --prep-text: #7a5d00;
+    --prep-line: #d4a900;
     --alert: #ffb829;
     --done: #2fc466;
     --danger: #d23a2c;

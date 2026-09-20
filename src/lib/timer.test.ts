@@ -11,7 +11,12 @@ import {
   pause,
   remainingMs,
   resume,
+  setPlan,
   statusOf,
+  syncable,
+  syncFinish,
+  syncPlan,
+  waitProgress,
   type AlertPlan,
 } from './timer'
 import { formatClock, formatDuration, parseDuration } from './format'
@@ -135,6 +140,119 @@ describe('events', () => {
   it('reports only the finish when an alert and the finish were both missed', () => {
     const t = createTimer('Fry', 6 * MIN, every(2), T0)
     expect(advance(t, T0 + 10 * MIN)).toBe('finished')
+  })
+})
+
+describe('setPlan (the bell on a card)', () => {
+  it('adds alerts to a timer that is already running; only future ones fire', () => {
+    const t = createTimer('Fry', 10 * MIN, NO_ALERTS, T0)
+    setPlan(t, every(3), T0 + 4 * MIN)
+    expect(t.alerts.map((a) => [a.atMs / MIN, a.state])).toEqual([[3, 'done'], [6, 'pending'], [9, 'pending']])
+    expect(advance(t, T0 + 5 * MIN)).toBeNull()
+    expect(advance(t, T0 + 6 * MIN)).toBe('alert')
+  })
+
+  it('removes alerts', () => {
+    const t = createTimer('Fry', 10 * MIN, every(3), T0)
+    setPlan(t, NO_ALERTS, T0 + MIN)
+    expect(t.alerts).toEqual([])
+    expect(advance(t, T0 + 5 * MIN)).toBeNull()
+  })
+
+  it('keeps an alert that is firing, so a held clock can still be released', () => {
+    const t = createTimer('Potatoes', 10 * MIN, half(true), T0)
+    advance(t, T0 + 5 * MIN)
+    setPlan(t, NO_ALERTS, T0 + 6 * MIN)
+    expect(statusOf(t)).toBe('alert')
+    acknowledge(t, T0 + 6 * MIN)
+    expect(statusOf(t)).toBe('running')
+  })
+
+  it('works on a prepped timer before it starts', () => {
+    const t = createTimer('Potatoes', 40 * MIN, NO_ALERTS, T0, true)
+    setPlan(t, half(true), T0 + 30 * MIN)
+    resume(t, T0 + 60 * MIN)
+    expect(advance(t, T0 + 80 * MIN)).toBe('alert')
+  })
+})
+
+describe('prepped timers', () => {
+  it('wait at full time until started, however long that takes', () => {
+    const t = createTimer('Potatoes', 40 * MIN, half(true), T0, true)
+    expect(statusOf(t)).toBe('prepped')
+    expect(advance(t, T0 + 90 * MIN)).toBeNull()
+    expect(remainingMs(t, T0 + 90 * MIN)).toBe(40 * MIN)
+    expect(isPending(t)).toBe(false)
+
+    resume(t, T0 + 90 * MIN)
+    expect(statusOf(t)).toBe('running')
+    expect(advance(t, T0 + 111 * MIN)).toBe('alert')
+    expect(t.alerts[0].firedAt).toBe(T0 + 110 * MIN)
+  })
+
+  it('queue below everything that is already cooking', () => {
+    const prepA = createTimer('Prep A', 2 * MIN, NO_ALERTS, T0, true)
+    const rice = createTimer('Rice', 10 * MIN, NO_ALERTS, T0 + 1)
+    const prepB = createTimer('Prep B', 1 * MIN, NO_ALERTS, T0 + 2, true)
+    expect(displayOrder([prepA, rice, prepB], T0 + MIN).map((t) => t.name)).toEqual(['Rice', 'Prep A', 'Prep B'])
+  })
+})
+
+describe('Sync Finish', () => {
+  const meal = () => [
+    createTimer('Veg', 8 * MIN, NO_ALERTS, T0, true),
+    createTimer('Roast', 40 * MIN, NO_ALERTS, T0 + 1, true),
+    createTimer('Chicken', 25 * MIN, NO_ALERTS, T0 + 2, true),
+  ]
+
+  it('plans backwards from the longest dish', () => {
+    expect(syncPlan(meal()).map((p) => [p.timer.name, p.delayMs / MIN])).toEqual([['Roast', 0], ['Chicken', 15], ['Veg', 32]])
+  })
+
+  it('starts the longest now and gives the rest a pre-timer', () => {
+    const [veg, roast, chicken] = meal()
+    syncFinish([veg, roast, chicken], T0)
+    expect(statusOf(roast)).toBe('running')
+    expect(statusOf(chicken)).toBe('waiting')
+    expect(chicken.startAt).toBe(T0 + 15 * MIN)
+    expect(waitProgress(veg, T0 + 16 * MIN)).toBe(0.5)
+    expect(syncable([veg, roast, chicken])).toEqual([])
+  })
+
+  it('asks for the dish to go on when its pre-timer ends, once, and waits for Start', () => {
+    const [veg, roast, chicken] = meal()
+    syncFinish([veg, roast, chicken], T0)
+    expect(advance(chicken, T0 + 14 * MIN)).toBeNull()
+    expect(advance(chicken, T0 + 15 * MIN)).toBe('due')
+    expect(advance(chicken, T0 + 16 * MIN)).toBeNull()
+    expect(statusOf(chicken)).toBe('due')
+    expect(isPending(chicken)).toBe(true)
+    expect(remainingMs(chicken, T0 + 20 * MIN)).toBe(25 * MIN) // not cooking until confirmed
+
+    resume(chicken, T0 + 16 * MIN)
+    expect(statusOf(chicken)).toBe('running')
+    advance(chicken, T0 + 41 * MIN)
+    expect(chicken.finishedAt).toBe(T0 + 41 * MIN)
+  })
+
+  it('leaves running timers and already-synced ones alone, and lets a dish go on early', () => {
+    const [veg, roast, chicken] = meal()
+    const rice = createTimer('Rice', 60 * MIN, NO_ALERTS, T0)
+    syncFinish([veg, roast, chicken, rice], T0)
+    expect(veg.startAt).toBe(T0 + 32 * MIN) // measured against the roast, not the rice
+    resume(veg, T0 + 5 * MIN)
+    expect(statusOf(veg)).toBe('running')
+    expect(veg.startAt).toBeNull()
+  })
+
+  it('orders: due with the other pending cards, waiting by start time, unsynced prep last', () => {
+    const [veg, roast, chicken] = meal()
+    syncFinish([veg, roast, chicken], T0)
+    const later = createTimer('Gravy', 5 * MIN, NO_ALERTS, T0 + 3, true)
+    const names = (now: number) => displayOrder([later, veg, roast, chicken], now).map((t) => t.name)
+    expect(names(T0 + MIN)).toEqual(['Roast', 'Chicken', 'Veg', 'Gravy'])
+    advance(chicken, T0 + 15 * MIN)
+    expect(names(T0 + 15 * MIN)).toEqual(['Chicken', 'Roast', 'Veg', 'Gravy'])
   })
 })
 

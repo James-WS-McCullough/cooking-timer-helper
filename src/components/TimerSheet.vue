@@ -1,22 +1,34 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { AlertKind, AlertPlan } from '../lib/timer'
+import { elapsedMs, NO_ALERTS, type AlertKind, type AlertPlan, type Timer } from '../lib/timer'
 import { formatClock, formatDuration, parseDuration } from '../lib/format'
-import { removePreset, savePreset, startPreset, startTimer, state, type Preset } from '../store'
+import { removePreset, savePreset, setTimerPlan, startPreset, startTimer, state, upsertPreset, type Preset } from '../store'
 import FoodIcon from './FoodIcon.vue'
+import { FOODS } from '../data/foods'
+import { searchFoods } from '../lib/foodSearch'
 
+// Two jobs, one sheet:
+//  - making a timer (name → time). With `prep`, it's built now and started later, in its own colour.
+//  - with `alertsFor`, editing the mid-way alerts of a timer that already exists (the bell on its card).
+// Alerts are deliberately not part of making a timer: starting one should take two taps.
+const props = defineProps<{ prep?: boolean; alertsFor?: Timer }>()
 const emit = defineEmits<{ close: [] }>()
 
 const MIN = 60_000
 const TIMES = [1, 2, 3, 4, 5, 8, 10, 15, 20, 25]
-const NAMES = ['Potatoes', 'Sausages', 'Chicken', 'Fish', 'Pasta', 'Rice', 'Eggs', 'Veg', 'Meat', 'Sauce', 'Oven', 'Pan']
+// Three rows of specific foods, then a row that covers most other things people time.
+const NAMES = [
+  ...['Potatoes', 'Sausages', 'Chicken', 'Fish'],
+  ...['Pasta', 'Rice', 'Eggs', 'Veg'],
+  ...['Meat', 'Sauce', 'Oven', 'Pan'],
+  ...['Pizza', 'Bread', 'Bake', 'Tea'],
+]
 const INTERVALS = [1, 2, 3, 5]
 const LABELS = ['Flip', 'Stir', 'Check', 'Baste']
 
-// One decision per screen. Most taps move forward on their own, so a plain
-// timer is: name → None → time, and it's running.
-type Step = 'name' | 'alerts' | 'details' | 'time'
-const step = ref<Step>('name')
+// One decision per screen, and most taps move forward on their own.
+type Step = 'name' | 'time' | 'alerts' | 'details'
+const step = ref<Step>(props.alertsFor ? 'alerts' : 'name')
 const direction = ref<'fwd' | 'back'>('fwd')
 
 function go(next: Step) {
@@ -25,45 +37,65 @@ function go(next: Step) {
 }
 
 function back() {
+  if (searching.value) return stopSearching()
   direction.value = 'back'
-  if (step.value === 'time') step.value = kind.value === 'none' ? 'alerts' : 'details'
-  else if (step.value === 'details') step.value = 'alerts'
-  else step.value = 'name'
+  step.value = step.value === 'details' ? 'alerts' : 'name'
 }
 
-const steps = computed<Step[]>(() =>
-  kind.value === 'none' ? ['name', 'alerts', 'time'] : ['name', 'alerts', 'details', 'time'],
-)
+const steps = computed<Step[]>(() => (props.alertsFor ? ['alerts', 'details'] : ['name', 'time']))
 
 // ---- Name ----
 const name = ref('')
 
 function pickName(n: string) {
   name.value = n
-  go('alerts')
+  searching.value = false
+  go('time')
 }
 
-// ---- Alerts ----
-const kind = ref<AlertKind>('none')
-const label = ref('Flip')
-const pickedEvery = ref<number | null>(2)
-const customEvery = ref('')
+// Focusing the name box turns the step into a search of the built-in food list.
+// The box doubles as free text: anything typed can be used as the name as-is.
+const searching = ref(false)
+const searchBox = ref<HTMLInputElement>()
+const results = computed(() => searchFoods(FOODS, name.value))
+
+function stopSearching() {
+  searching.value = false
+  name.value = ''
+  searchBox.value?.blur()
+}
+
+// ---- Alerts (only when opened from a card's bell) ----
+const current = props.alertsFor?.plan ?? NO_ALERTS
+const presetMinutes = [1, 2, 3, 5].includes(current.everyMs / MIN)
+const kind = ref<AlertKind>(current.kind)
+const label = ref(current.label)
+const pickedEvery = ref<number | null>(current.kind !== 'every' ? 2 : presetMinutes ? current.everyMs / MIN : null)
+const customEvery = ref(current.kind === 'every' && !presetMinutes ? String(current.everyMs / MIN) : '')
 const everyMs = computed(() => (customEvery.value.trim() ? parseDuration(customEvery.value) : (pickedEvery.value ?? 0) * MIN || null))
 
 // A single flip usually means the tray is out of the oven (hold the clock);
 // repeated flips happen in a pan that's still on the heat (keep counting).
 // Follow that default until the cook sets it by hand.
-const pause = ref(false)
-let pauseTouched = false
+const pause = ref(current.pause)
+let pauseTouched = current.kind !== 'none'
 function togglePause() {
   pauseTouched = true
   pause.value = !pause.value
 }
 
+// A halfway alert on a timer that's already past halfway could never fire.
+const pastHalfway = computed(() => {
+  const t = props.alertsFor
+  return !!t && elapsedMs(t, state.now) >= t.durationMs / 2
+})
+
 function pickKind(k: AlertKind) {
+  if (k === 'half' && pastHalfway.value) return
   kind.value = k
   if (!pauseTouched) pause.value = k === 'half'
-  go(k === 'none' ? 'time' : 'details')
+  if (k === 'none') applyAlerts()
+  else go('details')
 }
 
 function pickEvery(min: number) {
@@ -71,9 +103,12 @@ function pickEvery(min: number) {
   customEvery.value = ''
 }
 
-const detailsProblem = computed(() =>
-  kind.value === 'every' && !everyMs.value ? 'Choose how often, e.g. 2 or 1:30' : '',
-)
+const detailsProblem = computed(() => {
+  if (kind.value !== 'every') return ''
+  if (!everyMs.value) return 'Choose how often, e.g. 2 or 1:30'
+  const total = props.alertsFor?.durationMs ?? Infinity
+  return everyMs.value >= total ? `Needs to be shorter than the ${formatDuration(total)} timer` : ''
+})
 
 const plan = computed<AlertPlan>(() => ({
   kind: kind.value,
@@ -82,35 +117,27 @@ const plan = computed<AlertPlan>(() => ({
   pause: kind.value !== 'none' && pause.value,
 }))
 
+function applyAlerts() {
+  const t = props.alertsFor
+  if (!t) return
+  setTimerPlan(t.id, plan.value)
+  if (keepAsPreset.value) upsertPreset(t.name, t.durationMs, plan.value)
+  emit('close')
+}
+
 // ---- Time ----
 const customTime = ref('')
 const customMs = computed(() => parseDuration(customTime.value))
 const keepAsPreset = ref(false)
 
-/** A repeating alert needs room to fire at least once. */
-function tooShort(ms: number): boolean {
-  return kind.value === 'every' && ms <= plan.value.everyMs
-}
-
-const timeProblem = computed(() => {
-  if (!customTime.value.trim()) return ''
-  if (customMs.value === null) return 'Enter minutes (12 or 1.5) or m:ss (1:30)'
-  if (tooShort(customMs.value)) return `Needs to be longer than the ${formatDuration(plan.value.everyMs)} interval`
-  return ''
-})
-
-const recap = computed(() => {
-  const bits = [name.value.trim() || 'Timer']
-  if (kind.value === 'half') bits.push(`${label.value} halfway`)
-  if (kind.value === 'every') bits.push(`${label.value} every ${formatDuration(plan.value.everyMs)}`)
-  if (plan.value.pause) bits.push('holds')
-  return bits.join(' · ')
-})
+const timeProblem = computed(() =>
+  customTime.value.trim() && customMs.value === null ? 'Enter minutes (12 or 1.5) or m:ss (1:30)' : '',
+)
 
 function start(ms: number | null) {
-  if (ms === null || tooShort(ms)) return
-  if (keepAsPreset.value) savePreset(name.value, ms, plan.value)
-  startTimer(name.value, ms, plan.value)
+  if (ms === null) return
+  if (keepAsPreset.value) savePreset(name.value, ms, NO_ALERTS)
+  startTimer(name.value, ms, NO_ALERTS, props.prep)
   emit('close')
 }
 
@@ -126,7 +153,7 @@ function describe(p: Preset): string {
 
 function onPreset(p: Preset) {
   if (editingPresets.value) return
-  startPreset(p)
+  startPreset(p, props.prep)
   emit('close')
 }
 
@@ -139,100 +166,157 @@ watch(
 
 const TITLES: Record<Step, string> = {
   name: "What's cooking?",
+  time: 'How long?',
   alerts: 'Alerts along the way?',
   details: 'Alert details',
-  time: 'How long?',
 }
 
+const subject = computed(() => {
+  const t = props.alertsFor
+  return t ? `${t.name || 'Timer'} · ${formatDuration(t.durationMs)}` : name.value.trim() || 'Timer'
+})
+
 function onSubmit() {
-  if (step.value === 'name') go('alerts')
-  else if (step.value === 'details' && !detailsProblem.value) go('time')
+  if (step.value === 'name') {
+    searching.value = false
+    go('time')
+  } else if (step.value === 'details' && !detailsProblem.value) applyAlerts()
   else if (step.value === 'time' && !timeProblem.value) start(customMs.value)
 }
 
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape') emit('close')
 }
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+
+// On phones the on-screen keyboard covers the bottom of the page without resizing
+// it, which would bury most of the sheet. Track the area that's actually visible
+// and fit the sheet to that instead.
+const scrim = ref<HTMLElement>()
+function fitToVisibleArea() {
+  const vv = window.visualViewport
+  if (!vv || !scrim.value) return
+  scrim.value.style.setProperty('--visible-height', `${vv.height}px`)
+  scrim.value.style.setProperty('--visible-top', `${vv.offsetTop}px`)
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  window.visualViewport?.addEventListener('resize', fitToVisibleArea)
+  window.visualViewport?.addEventListener('scroll', fitToVisibleArea)
+  fitToVisibleArea()
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey)
+  window.visualViewport?.removeEventListener('resize', fitToVisibleArea)
+  window.visualViewport?.removeEventListener('scroll', fitToVisibleArea)
+})
 </script>
 
 <template>
-  <div class="scrim" @click.self="emit('close')">
-    <form class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" @submit.prevent="onSubmit">
+  <div ref="scrim" class="scrim" @click.self="emit('close')">
+    <form class="sheet" :class="{ prep: prep || alertsFor?.prepped }" role="dialog" aria-modal="true" aria-labelledby="sheet-title" @submit.prevent="onSubmit">
       <header class="head">
-        <button v-if="step !== 'name'" type="button" class="nav" aria-label="Back" @click="back">
+        <button v-if="step === 'time' || step === 'details' || searching" type="button" class="nav" aria-label="Back" @click="back">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </button>
         <span v-else class="nav" />
-        <div class="dots" aria-hidden="true">
-          <span v-for="s in steps" :key="s" :class="{ on: s === step }" />
+        <div class="progress">
+          <span v-if="prep" class="badge">Prep for later</span>
+          <div class="dots" aria-hidden="true">
+            <span v-for="s in steps" :key="s" :class="{ on: s === step }" />
+          </div>
         </div>
         <button type="button" class="nav" aria-label="Close" @click="emit('close')">✕</button>
       </header>
 
       <Transition :name="direction" mode="out-in">
         <div :key="step" class="body">
-          <h2 id="sheet-title">{{ TITLES[step] }}</h2>
+          <h2 v-show="!searching" id="sheet-title">{{ TITLES[step] }}</h2>
+          <p v-if="step !== 'name'" class="recap"><FoodIcon :name="alertsFor ? alertsFor.name : name" />{{ subject }}</p>
 
           <!-- 1 · Name -->
           <template v-if="step === 'name'">
-            <section v-if="state.presets.length">
-              <div class="label-row">
-                <h3>Presets · start in one tap</h3>
-                <button type="button" class="link" @click="editingPresets = !editingPresets">
-                  {{ editingPresets ? 'Finished' : 'Edit' }}
-                </button>
-              </div>
-              <div class="presets">
-                <div v-for="p in state.presets" :key="p.id" class="preset-wrap">
-                  <button type="button" class="preset" :disabled="editingPresets" @click="onPreset(p)">
-                    <FoodIcon :name="p.name" class="preset-icon" />
-                    <strong>{{ p.name || 'Timer' }}</strong>
-                    <span>{{ describe(p) }}</span>
-                  </button>
-                  <button
-                    v-if="editingPresets"
-                    type="button"
-                    class="preset-del"
-                    :aria-label="`Delete preset ${p.name}`"
-                    @click="removePreset(p.id)"
-                  >
-                    ✕
+            <div class="search">
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+                <circle cx="10.5" cy="10.5" r="6.5" />
+                <path d="m15.5 15.5 5 5" />
+              </svg>
+              <input
+                ref="searchBox"
+                v-model="name"
+                class="field"
+                maxlength="40"
+                autocomplete="off"
+                autocapitalize="sentences"
+                enterkeyhint="next"
+                placeholder="Search foods or type a name"
+                aria-label="Search foods or type a timer name"
+                @focus="searching = true"
+              />
+              <button v-if="name" type="button" class="clear" aria-label="Clear" @click="((name = ''), searchBox?.focus())">✕</button>
+            </div>
+
+            <template v-if="!searching">
+              <section v-if="state.presets.length">
+                <div class="label-row">
+                  <h3>Presets · {{ prep ? 'prep' : 'start' }} in one tap</h3>
+                  <button type="button" class="link" @click="editingPresets = !editingPresets">
+                    {{ editingPresets ? 'Finished' : 'Edit' }}
                   </button>
                 </div>
-              </div>
-            </section>
+                <div class="presets">
+                  <div v-for="p in state.presets" :key="p.id" class="preset-wrap">
+                    <button type="button" class="preset" :disabled="editingPresets" @click="onPreset(p)">
+                      <FoodIcon :name="p.name" class="preset-icon" />
+                      <strong>{{ p.name || 'Timer' }}</strong>
+                      <span>{{ describe(p) }}</span>
+                    </button>
+                    <button
+                      v-if="editingPresets"
+                      type="button"
+                      class="preset-del"
+                      :aria-label="`Delete preset ${p.name}`"
+                      @click="removePreset(p.id)"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              </section>
 
-            <div class="names">
-              <button v-for="n in NAMES" :key="n" type="button" class="chip" :aria-pressed="name === n" @click="pickName(n)">
-                <FoodIcon :name="n" class="chip-icon" />
-                {{ n }}
-              </button>
-            </div>
-            <input
-              v-model="name"
-              class="field"
-              maxlength="40"
-              autocomplete="off"
-              enterkeyhint="next"
-              placeholder="Or type a name"
-              aria-label="Timer name"
-            />
+              <div class="names">
+                <button v-for="n in NAMES" :key="n" type="button" class="chip" :aria-pressed="name === n" @click="pickName(n)">
+                  <FoodIcon :name="n" class="chip-icon" />
+                  {{ n }}
+                </button>
+              </div>
+            </template>
+
+            <ul v-else class="results">
+              <li v-for="[food, icon] in results" :key="food">
+                <button type="button" class="result" @click="pickName(food)">
+                  <FoodIcon :icon="icon" class="result-icon" />
+                  {{ food }}
+                </button>
+              </li>
+              <li v-if="!results.length" class="no-results">
+                Nothing in the list matches. Press <strong>Next</strong> to call it “{{ name.trim() }}”.
+              </li>
+            </ul>
           </template>
 
-          <!-- 2 · Alerts -->
+          <!-- Bell 1 · Which kind of alert -->
           <template v-else-if="step === 'alerts'">
             <div class="options">
               <button type="button" class="option" :aria-pressed="kind === 'none'" @click="pickKind('none')">
                 <strong>None</strong>
-                <span>Just count down</span>
+                <span>{{ current.kind === 'none' ? 'Just count down' : 'Remove the alerts and just count down' }}</span>
               </button>
-              <button type="button" class="option" :aria-pressed="kind === 'half'" @click="pickKind('half')">
+              <button type="button" class="option" :aria-pressed="kind === 'half'" :disabled="pastHalfway" @click="pickKind('half')">
                 <strong>Halfway</strong>
-                <span>One alert at the midpoint, like flipping a tray in the oven</span>
+                <span>{{ pastHalfway ? "This timer is already past halfway" : 'One alert at the midpoint, like flipping a tray in the oven' }}</span>
               </button>
               <button type="button" class="option" :aria-pressed="kind === 'every'" @click="pickKind('every')">
                 <strong>Every…</strong>
@@ -241,7 +325,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             </div>
           </template>
 
-          <!-- 3 · Alert details (skipped for None) -->
+          <!-- Bell 2 · Alert details (skipped for None) -->
           <template v-else-if="step === 'details'">
             <section v-if="kind === 'every'">
               <h3>Every how many minutes</h3>
@@ -283,18 +367,24 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               </span>
               <span class="switch" aria-hidden="true" />
             </button>
+
+            <button type="button" class="switch-row" role="switch" :aria-checked="keepAsPreset" @click="keepAsPreset = !keepAsPreset">
+              <span>
+                <strong>Save as preset</strong>
+                <small>Keeps this name, time and alert for a one-tap start</small>
+              </span>
+              <span class="switch" aria-hidden="true" />
+            </button>
           </template>
 
-          <!-- 4 · Time: tapping a number starts the timer -->
+          <!-- 2 · Time: tapping a number starts (or preps) the timer -->
           <template v-else>
-            <p class="recap"><FoodIcon :name="name" />{{ recap }}</p>
             <div class="times">
               <button
                 v-for="m in TIMES"
                 :key="m"
                 type="button"
                 class="chip big-num"
-                :disabled="tooShort(m * MIN)"
                 @click="start(m * MIN)"
               >
                 {{ m }}
@@ -321,17 +411,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </div>
       </Transition>
 
-      <footer v-if="step === 'name'" class="foot">
+      <footer v-if="step === 'name' && (!searching || name.trim())" class="foot">
         <button type="submit" class="next">{{ name.trim() ? 'Next' : 'Skip name' }}</button>
       </footer>
       <footer v-else-if="step === 'details'" class="foot">
         <p v-if="detailsProblem" class="problem" role="alert">{{ detailsProblem }}</p>
-        <button type="submit" class="next" :disabled="!!detailsProblem">Next</button>
+        <button type="submit" class="next" :disabled="!!detailsProblem">Set alert</button>
       </footer>
       <footer v-else-if="step === 'time' && customTime.trim()" class="foot">
         <p v-if="timeProblem" class="problem" role="alert">{{ timeProblem }}</p>
         <button type="submit" class="next tabular" :disabled="!!timeProblem">
-          {{ customMs && !timeProblem ? `Start ${formatClock(customMs)}` : 'Start' }}
+          {{ prep ? 'Prep' : 'Start' }}{{ customMs && !timeProblem ? ` ${formatClock(customMs)}` : '' }}
         </button>
       </footer>
     </form>
@@ -341,7 +431,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 <style scoped>
 .scrim {
   position: fixed;
-  inset: 0;
+  top: var(--visible-top, 0px);
+  left: 0;
+  right: 0;
+  height: var(--visible-height, 100dvh);
   z-index: 20;
   display: flex;
   align-items: flex-end;
@@ -356,7 +449,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   flex-direction: column;
   width: 100%;
   max-width: 560px;
-  height: min(680px, calc(100dvh - env(safe-area-inset-top) - 12px));
+  height: min(760px, calc(var(--visible-height, 100dvh) - env(safe-area-inset-top) - 12px));
   border-radius: 24px 24px 0 0;
   background: var(--surface);
   overflow: hidden;
@@ -369,8 +462,33 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   }
   .sheet {
     border-radius: 24px;
-    height: min(640px, calc(100dvh - 48px));
+    height: min(760px, calc(var(--visible-height, 100dvh) - 48px));
   }
+}
+
+/* Prep mode re-points the accent, so every highlight in the sheet turns lemon at once. */
+.sheet.prep {
+  --accent: var(--prep);
+  --on-accent: var(--on-prep);
+  --accent-text: var(--prep-text);
+  border-top: 3px solid var(--prep);
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.badge {
+  padding: 3px 10px;
+  border-radius: 10px;
+  background: var(--prep);
+  color: var(--on-prep);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .head {
@@ -456,6 +574,80 @@ h3 {
   font-weight: 650;
 }
 
+.search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  /* Opaque, and a little taller than itself, so results scroll away underneath it. */
+  margin: -4px 0;
+  padding: 4px 0;
+  background: var(--surface);
+  color: var(--text-dim);
+}
+
+.search svg {
+  position: absolute;
+  left: 14px;
+  pointer-events: none;
+}
+
+.search .field {
+  padding-left: 46px;
+  padding-right: 46px;
+  color: var(--text);
+}
+
+.clear {
+  position: absolute;
+  right: 4px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+
+.results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.result {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.result:active {
+  background: var(--surface-2);
+}
+
+@media (hover: hover) {
+  .result:hover {
+    background: var(--surface-2);
+  }
+}
+
+.result-icon {
+  font-size: 1.35rem;
+}
+
+.no-results {
+  padding: 16px 10px;
+  color: var(--text-dim);
+}
+
 .names {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -479,7 +671,7 @@ h3 {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  min-height: 84px;
+  min-height: 78px;
   padding: 6px 4px;
 }
 
@@ -518,7 +710,12 @@ h3 {
   border-color: var(--accent);
 }
 
-.option:active {
+.option:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.option:not(:disabled):active {
   transform: scale(0.98);
 }
 
@@ -752,14 +949,22 @@ h3 {
 /* Small phones: tighten up so every step still fits without scrolling. */
 @media (max-height: 700px) {
   .body {
-    gap: 12px;
+    gap: 9px;
+    padding-bottom: 12px;
   }
   h2 {
-    font-size: 1.4rem;
+    font-size: 1.3rem;
   }
   .names .chip {
-    min-height: 64px;
-    gap: 1px;
+    min-height: 56px;
+    gap: 0;
+  }
+  .names {
+    gap: 6px;
+  }
+  .preset {
+    min-height: 48px;
+    padding-block: 4px;
   }
   .chip-icon {
     font-size: 1.15rem;

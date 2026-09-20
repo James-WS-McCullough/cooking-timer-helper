@@ -1,28 +1,45 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { elapsedMs, firingAlert, nextAlert, remainingMs, statusOf, type Timer } from '../lib/timer'
+import { elapsedMs, firingAlert, nextAlert, remainingMs, statusOf, waitProgress, type Timer } from '../lib/timer'
 import { formatClock, formatDuration, formatSince } from '../lib/format'
 import { acknowledgeTimer, completeTimer, extendTimer, pauseTimer, removeTimer, resumeTimer } from '../store'
 import FoodIcon from './FoodIcon.vue'
 
 const props = defineProps<{ timer: Timer; now: number; pulse: number }>()
+const emit = defineEmits<{ alerts: [] }>()
+
+const hasAlerts = computed(() => props.timer.plan.kind !== 'none')
 
 const MIN = 60_000
+const MORE = 30_000 // the one "bit longer" step; tap it as many times as needed
 
 const status = computed(() => statusOf(props.timer))
-const pending = computed(() => status.value === 'alert' || status.value === 'finished')
+const pending = computed(() => ['alert', 'finished', 'due'].includes(status.value))
 const remaining = computed(() => remainingMs(props.timer, props.now))
-const progress = computed(() => elapsedMs(props.timer, props.now) / props.timer.durationMs)
+// A waiting (synced) card counts down to when the dish goes on, not the cook itself.
+const waiting = computed(() => status.value === 'waiting')
+const clock = computed(() => (waiting.value ? (props.timer.startAt ?? props.now) - props.now : remaining.value))
+const progress = computed(() =>
+  waiting.value ? waitProgress(props.timer, props.now) : elapsedMs(props.timer, props.now) / props.timer.durationMs,
+)
 const title = computed(() => props.timer.name || `${formatDuration(props.timer.durationMs)} timer`)
 
 // What to do and to what, in one line: "Flip Potatoes", "Rice ready".
 const headline = computed(() => {
   if (status.value === 'finished') return `${title.value} ready`
+  if (status.value === 'due') return props.timer.name ? `Start ${props.timer.name}` : `Start · ${title.value}`
   const label = firingAlert(props.timer)?.label ?? ''
   return props.timer.name ? `${label} ${props.timer.name}` : `${label} · ${title.value}`
 })
 
 const hint = computed(() => {
+  if (status.value === 'waiting') return `then ${formatDuration(props.timer.durationMs)}`
+  if (status.value === 'prepped') {
+    const { kind, label, everyMs } = props.timer.plan
+    if (kind === 'half') return `${label} halfway`
+    if (kind === 'every') return `${label} every ${formatDuration(everyMs)}`
+    return 'Ready to start'
+  }
   if (status.value === 'paused') return 'Paused'
   const next = nextAlert(props.timer)
   if (!next) return `of ${formatDuration(props.timer.durationMs)}`
@@ -30,6 +47,7 @@ const hint = computed(() => {
 })
 
 const pendingNote = computed(() => {
+  if (status.value === 'due') return `${formatDuration(props.timer.durationMs)} timer`
   if (props.timer.finishedAt !== null) return `${formatSince(props.now - props.timer.finishedAt)} ago`
   return `${formatClock(remaining.value)} left`
 })
@@ -58,13 +76,19 @@ onBeforeUnmount(() => clearTimeout(disarm))
       </header>
 
       <template v-if="status === 'finished'">
-        <button class="big" @click="completeTimer(timer.id)">Done</button>
-        <div class="more">
-          <button class="ghost" @click="extendTimer(timer.id, MIN / 2)">+30s</button>
-          <button class="ghost" @click="extendTimer(timer.id, MIN)">+1 min</button>
-          <button class="ghost" @click="extendTimer(timer.id, 3 * MIN)">+3 min</button>
+        <!-- Only seen while the card clears; a real element so its animation can't end the card's early. -->
+        <span class="tick" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="44" height="44">
+            <path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </span>
+        <div class="finish">
+          <button class="big" @click="completeTimer(timer.id)">Done</button>
+          <button class="ghost" @click="extendTimer(timer.id, MORE)">+30s</button>
         </div>
       </template>
+      <!-- Synced dish: its pre-timer is up. The cook confirms it's on, and the real timer starts. -->
+      <button v-else-if="status === 'due'" class="big" @click="resumeTimer(timer.id)">Start</button>
       <button v-else class="big" @click="acknowledgeTimer(timer.id)">
         {{ timer.pausedBy === 'alert' ? 'Done · resume' : 'Done' }}
       </button>
@@ -76,6 +100,17 @@ onBeforeUnmount(() => clearTimeout(disarm))
         <h2 class="name">{{ title }}</h2>
         <span class="note tabular">{{ hint }}</span>
         <button
+          class="bell"
+          :class="{ set: hasAlerts }"
+          :aria-label="hasAlerts ? `Change alerts for ${title}` : `Add a flip or stir alert to ${title}`"
+          @click="emit('alerts')"
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :fill="hasAlerts ? 'currentColor' : 'none'">
+            <path d="M6 9a6 6 0 0 1 12 0c0 5 2 6.5 2 6.5H4S6 14 6 9Z" />
+            <path d="M10 19.5a2.2 2.2 0 0 0 4 0" fill="none" />
+          </svg>
+        </button>
+        <button
           class="remove"
           :class="{ armed }"
           :aria-label="armed ? `Confirm remove ${title}` : `Remove ${title}`"
@@ -86,10 +121,21 @@ onBeforeUnmount(() => clearTimeout(disarm))
       </header>
 
       <div class="main">
-        <p class="clock tabular" :class="{ long: remaining >= 60 * MIN }" role="timer">{{ formatClock(remaining) }}</p>
-        <span class="actions">
-          <button class="ctl" @click="extendTimer(timer.id, MIN / 2)">+30s</button>
-          <button class="ctl" @click="extendTimer(timer.id, MIN)">+1m</button>
+        <p class="clock tabular" :class="{ long: clock >= 60 * MIN }" role="timer">
+          <small v-if="waiting">Start in</small>
+          {{ formatClock(clock) }}
+        </p>
+        <!-- Synced and waiting: it will ask when it's time, but it can go on early -->
+        <button v-if="waiting" class="ctl early" @click="resumeTimer(timer.id)">Start now</button>
+        <!-- Prepped: nothing to adjust yet, just the way to set it going -->
+        <button v-else-if="status === 'prepped'" class="ctl go" @click="resumeTimer(timer.id)">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5Z" fill="currentColor" />
+          </svg>
+          Start
+        </button>
+        <span v-else class="actions">
+          <button class="ctl more" @click="extendTimer(timer.id, MORE)">+30s</button>
           <button v-if="status === 'running'" class="ctl" aria-label="Pause" @click="pauseTimer(timer.id)">
             <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
               <rect x="5" y="4" width="5" height="16" rx="1.5" fill="currentColor" />
@@ -105,9 +151,9 @@ onBeforeUnmount(() => clearTimeout(disarm))
       </div>
 
       <div class="bar" aria-hidden="true">
-        <div class="fill" :style="{ transform: `scaleX(${progress})` }" />
+        <div class="fill" :style="{ width: `${progress * 100}%` }" />
         <span
-          v-for="a in timer.alerts"
+          v-for="a in waiting ? [] : timer.alerts"
           :key="a.id"
           class="mark"
           :class="{ passed: a.state === 'done' }"
@@ -164,6 +210,26 @@ onBeforeUnmount(() => clearTimeout(disarm))
   font-weight: 600;
 }
 
+/* Mid-way alerts live here, not in the wizard. Amber once set, to match the dots on the bar. */
+.bell {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 36px;
+  margin: 0 -6px;
+  border-radius: 10px;
+  color: var(--text-dim);
+}
+
+.bell.set {
+  color: var(--alert);
+}
+
+.bell:active {
+  transform: scale(0.9);
+}
+
 .remove {
   flex: none;
   min-width: 40px;
@@ -204,6 +270,89 @@ onBeforeUnmount(() => clearTimeout(disarm))
   color: var(--text-dim);
 }
 
+/* ---- Prepped: set up, not started. Lemon and dashed, so it reads as "not live yet"
+   and can't be mistaken for the solid amber of a flip alert. ---- */
+.is-prepped {
+  background: color-mix(in srgb, var(--prep) 9%, var(--surface));
+  border: 2px dashed var(--prep-line);
+  padding: 9px 15px 13px; /* the border is 1px thicker; keep the card the same size */
+}
+
+.is-prepped .clock,
+.is-prepped .note {
+  color: var(--prep-text);
+}
+
+.is-prepped .bar {
+  background: color-mix(in srgb, var(--prep) 22%, var(--surface));
+}
+
+.is-prepped .fill {
+  display: none;
+}
+
+/* ---- Synced (Sync Finish): violet. Waiting is tinted with a countdown to when it
+   goes on; due is the solid "put it on now" card. ---- */
+.is-waiting {
+  background: color-mix(in srgb, var(--sync) 11%, var(--surface));
+  border-color: color-mix(in srgb, var(--sync) 55%, var(--surface));
+}
+
+.is-waiting .clock,
+.is-waiting .note {
+  color: var(--sync-text);
+}
+
+.clock small {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.is-waiting .clock {
+  font-size: 2.3rem;
+}
+
+.is-waiting .bar {
+  background: color-mix(in srgb, var(--sync) 22%, var(--surface));
+}
+
+.is-waiting .fill {
+  background: var(--sync);
+}
+
+.ctl.early {
+  padding: 0 16px;
+  border: 2px solid color-mix(in srgb, var(--sync) 70%, var(--surface));
+  background: none;
+  color: var(--sync-text);
+}
+
+.is-due {
+  background: var(--sync);
+  border-color: var(--sync);
+  color: var(--on-sync);
+  --glow: var(--sync);
+}
+
+.is-due .big {
+  background: var(--on-sync);
+  color: var(--sync);
+}
+
+.ctl.go {
+  display: flex;
+  gap: 8px;
+  padding: 0 20px 0 16px;
+  background: var(--prep);
+  color: var(--on-prep);
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
 .actions {
   display: flex;
   gap: 6px;
@@ -220,6 +369,10 @@ onBeforeUnmount(() => clearTimeout(disarm))
   font-weight: 650;
 }
 
+.ctl.more {
+  min-width: 72px;
+}
+
 .ctl.play {
   background: var(--accent);
   color: var(--on-accent);
@@ -233,18 +386,19 @@ onBeforeUnmount(() => clearTimeout(disarm))
 
 .bar {
   position: relative;
-  height: 6px;
+  height: 12px;
   margin-top: 8px;
-  border-radius: 3px;
+  border-radius: 6px;
   background: var(--surface-2);
 }
 
+/* Sized by width, not scaleX: scaling would squash the rounded end into a square one. */
 .fill {
   height: 100%;
-  border-radius: 3px;
+  min-width: 12px; /* never less than a full round cap */
+  border-radius: 6px;
   background: var(--accent);
-  transform-origin: left;
-  transition: transform 0.25s linear;
+  transition: width 0.25s linear;
 }
 
 .is-paused .fill {
@@ -254,11 +408,11 @@ onBeforeUnmount(() => clearTimeout(disarm))
 /* Where the flips happen along the way. */
 .mark {
   position: absolute;
-  top: -4px;
-  width: 4px;
-  height: 14px;
-  margin-left: -2px;
-  border-radius: 2px;
+  top: 2px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 50%;
   background: var(--alert);
   box-shadow: 0 0 0 2px var(--surface);
 }
@@ -328,6 +482,7 @@ onBeforeUnmount(() => clearTimeout(disarm))
 }
 
 .is-alert .note,
+.is-due .note,
 .is-finished .note {
   color: inherit;
   opacity: 0.8;
@@ -352,19 +507,108 @@ onBeforeUnmount(() => clearTimeout(disarm))
   color: var(--done);
 }
 
-.more {
+.finish {
   display: flex;
-  gap: 6px;
-  margin-top: 2px;
+  gap: 8px;
 }
 
 .ghost {
-  flex: 1;
-  min-height: 42px;
+  flex: none;
+  min-width: 88px;
+  font-size: 1.15rem;
   border-radius: var(--radius-sm);
   border: 2px solid currentColor;
   font-weight: 700;
   opacity: 0.85;
+}
+
+/* ---- Leaving ----
+   Removed with ✕: a quick whisk away. Cleared with Done: the contents give way
+   to a tick that pops, then the whole card lifts off. */
+.card.cards-leave-active {
+  animation: whisk 0.26s ease-in forwards;
+}
+
+@keyframes whisk {
+  to {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+.tick {
+  position: absolute;
+  inset: 0;
+  display: none;
+  place-items: center;
+  color: var(--on-done);
+}
+
+.tick svg {
+  box-sizing: content-box;
+  padding: 12px;
+  border-radius: 50%;
+  background: var(--on-done);
+  color: var(--done);
+}
+
+.card.is-finished.cards-leave-active {
+  animation: lift-off 0.8s cubic-bezier(0.4, 0, 0.6, 1) forwards;
+}
+
+.card.is-finished.cards-leave-active > :not(.tick) {
+  animation: give-way 0.1s ease-out forwards;
+}
+
+.card.is-finished.cards-leave-active .tick {
+  display: grid;
+}
+
+.card.is-finished.cards-leave-active .tick svg {
+  animation: pop 0.32s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+
+.card.is-finished.cards-leave-active .tick path {
+  stroke-dasharray: 22;
+  stroke-dashoffset: 22;
+  animation: draw 0.16s ease-out 0.1s forwards;
+}
+
+@keyframes give-way {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes lift-off {
+  0% {
+    transform: scale(1);
+  }
+  14% {
+    transform: scale(1.035);
+  }
+  28%,
+  60% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.88);
+  }
 }
 
 /* Plays once per reminder sound: the card flares and a band of light sweeps
@@ -407,6 +651,13 @@ onBeforeUnmount(() => clearTimeout(disarm))
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .card.cards-leave-active,
+  .card.is-finished.cards-leave-active {
+    animation: give-way 0.2s ease-out forwards;
+  }
+  .card.is-finished.cards-leave-active .tick {
+    display: none;
+  }
   .shimmer::before {
     display: none;
   }
