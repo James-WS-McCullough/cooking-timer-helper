@@ -8,7 +8,7 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "test": "vitest run",
-    "icons": "pwa-assets-generator --preset minimal-2023 public/icon.svg"
+    "icons": "pwa-assets-generator"
   },
   "dependencies": {
     "uqr": "^0.1.3",

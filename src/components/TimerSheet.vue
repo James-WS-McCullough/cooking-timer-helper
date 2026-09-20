@@ -157,6 +157,15 @@ function onPreset(p: Preset) {
   emit('close')
 }
 
+// A removed preset is lifted out of the row so its neighbours can slide into the
+// gap; pin it where it was or it would jump to the start of the row first.
+function pinPreset(el: Element) {
+  const pill = el as HTMLElement
+  pill.style.left = `${pill.offsetLeft}px`
+  pill.style.top = `${pill.offsetTop}px`
+  pill.style.width = `${pill.offsetWidth}px`
+}
+
 watch(
   () => state.presets.length,
   (n) => {
@@ -259,32 +268,42 @@ onBeforeUnmount(() => {
             </div>
 
             <template v-if="!searching">
-              <section v-if="state.presets.length">
-                <div class="label-row">
-                  <h3>Presets · {{ prep ? 'prep' : 'start' }} in one tap</h3>
-                  <button type="button" class="link" @click="editingPresets = !editingPresets">
-                    {{ editingPresets ? 'Finished' : 'Edit' }}
-                  </button>
-                </div>
-                <div class="presets">
-                  <div v-for="p in state.presets" :key="p.id" class="preset-wrap">
-                    <button type="button" class="preset" :disabled="editingPresets" @click="onPreset(p)">
-                      <FoodIcon :name="p.name" class="preset-icon" />
-                      <strong>{{ p.name || 'Timer' }}</strong>
-                      <span>{{ describe(p) }}</span>
-                    </button>
-                    <button
-                      v-if="editingPresets"
-                      type="button"
-                      class="preset-del"
-                      :aria-label="`Delete preset ${p.name}`"
-                      @click="removePreset(p.id)"
-                    >
-                      ✕
+              <Transition name="fold">
+                <section v-if="state.presets.length" class="presets-section">
+                  <div class="label-row">
+                    <h3>Presets · {{ prep ? 'prep' : 'start' }} in one tap</h3>
+                    <button type="button" class="link" :aria-pressed="editingPresets" @click="editingPresets = !editingPresets">
+                      {{ editingPresets ? 'Done' : 'Edit' }}
                     </button>
                   </div>
-                </div>
-              </section>
+                  <TransitionGroup name="preset" tag="div" class="presets" :class="{ editing: editingPresets }" @before-leave="pinPreset">
+                    <!-- --i staggers the ✕s so they pop in as a quick cascade along the row -->
+                    <div v-for="(p, i) in state.presets" :key="p.id" class="preset-wrap" :style="{ '--i': i }">
+                      <button type="button" class="preset" :disabled="editingPresets" @click="onPreset(p)">
+                        <FoodIcon :name="p.name" class="preset-icon" />
+                        <strong>{{ p.name || 'Timer' }}</strong>
+                        <span>{{ describe(p) }}</span>
+                      </button>
+                      <!-- In edit mode the whole pill is the delete target; the ✕ sits in its centre -->
+                      <Transition name="del">
+                        <button
+                          v-if="editingPresets"
+                          type="button"
+                          class="preset-del"
+                          :aria-label="`Delete preset ${p.name || 'Timer'}`"
+                          @click="removePreset(p.id)"
+                        >
+                          <span class="x">
+                            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" />
+                            </svg>
+                          </span>
+                        </button>
+                      </Transition>
+                    </div>
+                  </TransitionGroup>
+                </section>
+              </Transition>
 
               <div class="names">
                 <button v-for="n in NAMES" :key="n" type="button" class="chip" :aria-pressed="name === n" @click="pickName(n)">
@@ -773,10 +792,11 @@ h3 {
 }
 
 .presets {
+  position: relative; /* anchor for a pill pinned in place while it leaves */
   display: flex;
   gap: 8px;
   margin: 0 -20px;
-  padding: 2px 20px;
+  padding: 6px 20px; /* room for the pills to wiggle and the ✕ to overshoot without clipping */
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -821,22 +841,108 @@ h3 {
   color: var(--text-dim);
 }
 
-.preset:disabled {
-  opacity: 0.6;
-  padding-right: 48px;
+/* Edit mode: pills keep their size (nothing jumps), fade back, and jiggle a little
+   to say "these can go". The jiggle is on the pill, not its wrapper, so it never
+   fights the wrapper's slide when a neighbour is removed. */
+.preset {
+  transition: opacity 0.2s ease;
+}
+
+.editing .preset {
+  opacity: 0.4;
+  animation: jiggle 0.3s ease-in-out infinite alternate;
+  animation-delay: calc(var(--i) * -0.13s);
+}
+
+@keyframes jiggle {
+  from {
+    transform: rotate(-0.9deg);
+  }
+  to {
+    transform: rotate(0.9deg);
+  }
 }
 
 .preset-del {
   position: absolute;
-  top: 50%;
-  right: 8px;
-  width: 36px;
-  height: 36px;
-  margin-top: -18px;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+}
+
+.preset-del .x {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   background: var(--danger);
   color: #fff;
-  font-weight: 700;
+  box-shadow: 0 3px 10px rgb(0 0 0 / 0.35);
+  transition: transform 0.1s ease;
+}
+
+.preset-del:active .x {
+  transform: scale(0.88);
+}
+
+/* The ✕ pops in with a little overshoot, one pill after another, and ducks out quicker. */
+.del-enter-active {
+  transition:
+    opacity 0.15s ease,
+    transform 0.32s cubic-bezier(0.3, 1.7, 0.5, 1);
+  transition-delay: calc(var(--i) * 45ms);
+}
+
+.del-leave-active {
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease-in;
+  transition-delay: calc(var(--i) * 25ms);
+}
+
+.del-enter-from,
+.del-leave-to {
+  opacity: 0;
+  transform: scale(0.2);
+}
+
+/* Removing one: it puffs up a touch and shrinks away while the rest slide over. */
+.preset-leave-active {
+  position: absolute;
+  pointer-events: none;
+  animation: preset-out 0.3s ease-in forwards;
+}
+
+@keyframes preset-out {
+  30% {
+    transform: scale(1.06);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+.preset-move {
+  transition: transform 0.38s cubic-bezier(0.3, 0.9, 0.3, 1) 0.18s; /* let the removed pill mostly go first */
+}
+
+/* Removing the last one folds the whole section away instead of snapping the grid up. */
+.fold-leave-active {
+  overflow: hidden;
+  max-height: 120px;
+  transition:
+    opacity 0.25s ease,
+    max-height 0.3s ease 0.2s,
+    margin-bottom 0.3s ease 0.2s;
+}
+
+.fold-leave-to {
+  opacity: 0;
+  max-height: 0;
+  margin-bottom: -16px; /* swallow the flex gap that would otherwise linger until the end */
 }
 
 .switch-row {
@@ -978,6 +1084,12 @@ h3 {
   }
 }
 
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
 @keyframes fade {
   from {
     opacity: 0;
@@ -993,8 +1105,19 @@ h3 {
 
 @media (prefers-reduced-motion: reduce) {
   .scrim,
-  .sheet {
+  .sheet,
+  .editing .preset {
     animation: none;
+  }
+  .preset-leave-active {
+    animation: fade-out 0.15s ease forwards;
+  }
+  .del-enter-active,
+  .del-leave-active,
+  .preset-move,
+  .fold-leave-active {
+    transition-duration: 0.01s;
+    transition-delay: 0s;
   }
   .fwd-enter-active,
   .fwd-leave-active,

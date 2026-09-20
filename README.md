@@ -9,7 +9,7 @@ npm install
 npm run dev      # http://localhost:5173, also exposed on your LAN
 npm test         # timer engine tests
 npm run build    # type-check + production build into dist/
-npm run icons    # regenerate PWA icons from public/icon.svg
+npm run icons    # regenerate PWA icons from public/icon.svg (settings in pwa-assets.config.ts)
 ```
 
 ## Deploying
