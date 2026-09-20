@@ -27,14 +27,14 @@
   --radius-sm: 12px;
   --tap: 52px; /* minimum touch target; fingers may be wet or floury */
 
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 17px;
   line-height: 1.35;
 }
 
 /* data-theme is always set (index.html does it before first paint, src/lib/theme.ts
    keeps it current): the device's preference, unless the cook has picked one. */
-:root[data-theme='light'] {
+:root[data-theme="light"] {
   color-scheme: light;
   --bg: #f7f2ec;
   --surface: #ffffff;
@@ -110,7 +110,7 @@ input:focus-visible {
   transform: scale(0.96);
 }
 
-.chip[aria-pressed='true'] {
+.chip[aria-pressed="true"] {
   background: var(--accent);
   color: var(--on-accent);
 }

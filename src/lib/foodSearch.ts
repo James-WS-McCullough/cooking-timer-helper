@@ -20,8 +20,8 @@ function score(entry: FoodEntry, words: string[]): number {
   for (const word of words) {
     let s: number
     if (name.startsWith(word)) s = 0
-    else if (name.includes(' ' + word)) s = 1
-    else if (extra.startsWith(word) || extra.includes(' ' + word)) s = 2
+    else if (name.includes(` ${word}`)) s = 1
+    else if (extra.startsWith(word) || extra.includes(` ${word}`)) s = 2
     else if (name.includes(word) || extra.includes(word)) s = 3
     else return -1
     worst = Math.max(worst, s)

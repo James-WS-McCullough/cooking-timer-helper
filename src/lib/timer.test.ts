@@ -1,25 +1,30 @@
 import { describe, expect, it } from 'vitest'
+import { formatClock, formatDuration, parseDuration, tidyName } from './format'
 import {
+  type AlertPlan,
   acknowledge,
   addTime,
   advance,
+  anyPausedByAll,
   buildAlerts,
+  countingTimers,
   createTimer,
   displayOrder,
   isPending,
   NO_ALERTS,
   pause,
+  pauseAll,
   remainingMs,
   resume,
+  resumeAll,
   setPlan,
   statusOf,
   syncable,
   syncFinish,
   syncPlan,
   waitProgress,
-  type AlertPlan,
+  waitRemainingMs,
 } from './timer'
-import { formatClock, formatDuration, parseDuration, tidyName } from './format'
 
 const MIN = 60_000
 const T0 = 1_000_000
@@ -147,7 +152,11 @@ describe('setPlan (the bell on a card)', () => {
   it('adds alerts to a timer that is already running; only future ones fire', () => {
     const t = createTimer('Fry', 10 * MIN, NO_ALERTS, T0)
     setPlan(t, every(3), T0 + 4 * MIN)
-    expect(t.alerts.map((a) => [a.atMs / MIN, a.state])).toEqual([[3, 'done'], [6, 'pending'], [9, 'pending']])
+    expect(t.alerts.map((a) => [a.atMs / MIN, a.state])).toEqual([
+      [3, 'done'],
+      [6, 'pending'],
+      [9, 'pending'],
+    ])
     expect(advance(t, T0 + 5 * MIN)).toBeNull()
     expect(advance(t, T0 + 6 * MIN)).toBe('alert')
   })
@@ -206,7 +215,11 @@ describe('Sync Finish', () => {
   ]
 
   it('plans backwards from the longest dish', () => {
-    expect(syncPlan(meal()).map((p) => [p.timer.name, p.delayMs / MIN])).toEqual([['Roast', 0], ['Chicken', 15], ['Veg', 32]])
+    expect(syncPlan(meal()).map((p) => [p.timer.name, p.delayMs / MIN])).toEqual([
+      ['Roast', 0],
+      ['Chicken', 15],
+      ['Veg', 32],
+    ])
   })
 
   it('starts the longest now and gives the rest a pre-timer', () => {
@@ -253,6 +266,52 @@ describe('Sync Finish', () => {
     expect(names(T0 + MIN)).toEqual(['Roast', 'Chicken', 'Veg', 'Gravy'])
     advance(chicken, T0 + 15 * MIN)
     expect(names(T0 + 15 * MIN)).toEqual(['Chicken', 'Roast', 'Veg', 'Gravy'])
+  })
+})
+
+describe('Pause all / Resume all', () => {
+  it('stops and restarts running timers together, leaving hand-paused ones alone', () => {
+    const rice = createTimer('Rice', 10 * MIN, NO_ALERTS, T0)
+    const eggs = createTimer('Eggs', 6 * MIN, NO_ALERTS, T0)
+    const mine = createTimer('Mine', 8 * MIN, NO_ALERTS, T0)
+    pause(mine, T0 + MIN)
+    expect(countingTimers([rice, eggs, mine])).toBe(2)
+
+    pauseAll([rice, eggs, mine], T0 + 2 * MIN)
+    expect([rice, eggs].map(statusOf)).toEqual(['paused', 'paused'])
+    expect(anyPausedByAll([rice, eggs, mine])).toBe(true)
+    expect(remainingMs(rice, T0 + 30 * MIN)).toBe(8 * MIN)
+
+    resumeAll([rice, eggs, mine], T0 + 30 * MIN)
+    expect([rice, eggs, mine].map(statusOf)).toEqual(['running', 'running', 'paused'])
+    expect(anyPausedByAll([rice, eggs, mine])).toBe(false)
+    advance(rice, T0 + 38 * MIN)
+    expect(rice.finishedAt).toBe(T0 + 38 * MIN)
+  })
+
+  it('freezes Sync pre-timers too, so a synced meal shifts as one block', () => {
+    const roast = createTimer('Roast', 40 * MIN, NO_ALERTS, T0, true)
+    const veg = createTimer('Veg', 10 * MIN, NO_ALERTS, T0 + 1, true)
+    syncFinish([roast, veg], T0)
+    pauseAll([roast, veg], T0 + 10 * MIN)
+    expect(waitRemainingMs(veg, T0 + 25 * MIN)).toBe(20 * MIN)
+    expect(advance(veg, T0 + 60 * MIN)).toBeNull() // doesn't come due while frozen
+
+    resumeAll([roast, veg], T0 + 25 * MIN)
+    expect(veg.startAt).toBe(T0 + 45 * MIN)
+    expect(waitProgress(veg, T0 + 25 * MIN)).toBeCloseTo(1 / 3)
+    expect(advance(veg, T0 + 45 * MIN)).toBe('due')
+    // both still land together: roast has 30 left at 25 → 55; veg on at 45 + 10 → 55
+    expect(remainingMs(roast, T0 + 25 * MIN)).toBe(30 * MIN)
+  })
+
+  it('leaves pending, finished and plain prepped timers untouched', () => {
+    const done = createTimer('Done', MIN, NO_ALERTS, T0)
+    advance(done, T0 + 2 * MIN)
+    const prepped = createTimer('Later', 5 * MIN, NO_ALERTS, T0, true)
+    pauseAll([done, prepped], T0 + 3 * MIN)
+    expect([done, prepped].map(statusOf)).toEqual(['finished', 'prepped'])
+    expect(anyPausedByAll([done, prepped])).toBe(false)
   })
 })
 

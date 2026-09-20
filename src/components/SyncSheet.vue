@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted } from 'vue'
-import { syncPlan } from '../lib/timer'
 import { formatDuration } from '../lib/format'
+import { syncPlan } from '../lib/timer'
 import { state, syncAndStart } from '../store'
 import FoodIcon from './FoodIcon.vue'
 
@@ -14,6 +14,11 @@ const plan = computed(() => syncPlan(state.timers))
 const SHOWN = 4
 const shown = computed(() => plan.value.slice(0, SHOWN))
 const total = computed(() => Math.max(0, ...plan.value.map((p) => p.timer.durationMs)))
+
+// "Ready at 18:42" is how a cook thinks; it keeps ticking forward while the sheet is open.
+const readyAt = computed(() =>
+  new Date(state.now + total.value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+)
 
 function go() {
   syncAndStart()
@@ -53,7 +58,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </ol>
 
       <p class="foot-note">
-        All ready in about {{ formatDuration(total) }}. When a pre-timer ends you'll be reminded until you press Start, so
+        <strong class="ready-at">All ready at about {{ readyAt }}</strong> ({{ formatDuration(total) }} from now). When a pre-timer ends you'll be reminded until you press Start, so
         put the food on first.
       </p>
 
@@ -193,6 +198,10 @@ h2 {
 
 /* Always reachable: if the panel has to scroll on a short screen, the button stays
    put and the explanation scrolls behind it. */
+.ready-at {
+  color: var(--text);
+}
+
 .go {
   position: sticky;
   bottom: 0; /* measured from inside the panel's padding, which already clears the safe area */

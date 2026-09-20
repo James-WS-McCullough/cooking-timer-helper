@@ -1,0 +1,141 @@
+/* What the steps inside a SheetShell have in common. Steps render in the shell's
+   slots, out of reach of its scoped styles, and several of them use each of these,
+   so they're plain CSS, kept from leaking by living under `.sheet`. (A `.sheet x`
+   selector weighs the same as a scoped `x`, so nothing changes rank in the cascade.)
+   Anything only one step uses is scoped in that step. Imported once, by SheetShell.vue. */
+
+/* Round icon button: the header's back and close, and the search row's back. */
+.sheet .nav {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  color: var(--text-dim);
+  font-size: 1.1rem;
+}
+
+.sheet section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sheet h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.sheet .chip.big-num {
+  min-height: 60px;
+  padding: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.sheet .chip:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* Under the title from the second step on: what this sheet is about. */
+.sheet .recap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -8px 0 0;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.sheet .switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 64px;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  text-align: left;
+}
+
+.sheet .switch-row strong,
+.sheet .switch-row small {
+  display: block;
+}
+
+.sheet .switch-row small {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.sheet .switch {
+  position: relative;
+  flex: none;
+  width: 52px;
+  height: 32px;
+  border-radius: 16px;
+  background: var(--border);
+  transition: background 0.15s;
+}
+
+.sheet .switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+  transition: transform 0.15s;
+}
+
+.sheet [aria-checked="true"] .switch {
+  background: var(--accent);
+}
+
+.sheet [aria-checked="true"] .switch::after {
+  transform: translateX(20px);
+}
+
+/* The footer's contents. */
+.sheet .problem {
+  margin: 0 0 10px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.sheet .next {
+  width: 100%;
+  min-height: 64px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+
+.sheet .next:disabled {
+  background: var(--surface-2);
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.sheet .next:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+/* Small phones: tighten up so every step still fits without scrolling. */
+@media (max-height: 700px) {
+  .sheet .chip.big-num {
+    min-height: 60px;
+  }
+}

@@ -2,20 +2,32 @@
   "name": "sizzle",
   "private": true,
   "version": "0.1.0",
+  "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "test": "vitest run",
-    "icons": "pwa-assets-generator"
+    "icons": "pwa-assets-generator",
+    "test:e2e": "playwright test",
+    "test:all": "vitest run && playwright test",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "check": "biome check . && vue-tsc --noEmit && tsc -p e2e && vitest run",
+    "lab": "vite --open /lab/voice/"
   },
   "dependencies": {
     "uqr": "^0.1.3",
     "vue": "^3.5.43"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@diffusionstudio/piper-wasm": "^1.0.0",
     "@iconify-json/fluent-emoji-flat": "^1.2.6",
+    "@mintplex-labs/piper-tts-web": "^1.0.5",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.2",
     "@vite-pwa/assets-generator": "^1.0.4",
     "@vitejs/plugin-vue": "^6.0.9",
     "typescript": "^5.9.3",

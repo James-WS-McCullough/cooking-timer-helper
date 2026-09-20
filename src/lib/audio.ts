@@ -27,7 +27,9 @@ const buffers = new Map<Sfx, Promise<AudioBuffer>>()
 
 function context(): AudioContext | null {
   if (ctx) return ctx
-  const Ctor = window.AudioContext ?? (window as any).webkitAudioContext
+  // Older Safari only has the prefixed constructor.
+  const Ctor =
+    window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
   if (!Ctor) return null
   const created: AudioContext = new Ctor()
   created.onstatechange = () => {
@@ -36,6 +38,9 @@ function context(): AudioContext | null {
   ctx = created
   return created
 }
+
+/** The app's one AudioContext (the robot's voice plays through it too), or null if audio isn't available. */
+export const audioContext = context
 
 function buffer(c: AudioContext, name: Sfx): Promise<AudioBuffer> {
   let loading = buffers.get(name)
@@ -58,7 +63,7 @@ export function unlock(): void {
   const c = context()
   if (!c) return
   // iOS: without this, Web Audio obeys the ringer switch and a silenced phone stays silent.
-  const session = (navigator as any).audioSession
+  const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession
   if (session && session.type !== 'playback') {
     try {
       session.type = 'playback'

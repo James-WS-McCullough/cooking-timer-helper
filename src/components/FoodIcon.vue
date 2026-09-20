@@ -1,8 +1,7 @@
 <script setup lang="ts">
 // Icons: Microsoft Fluent Emoji (flat), MIT. Imported one by one so only these ship.
 // The import list covers every icon named in src/data/foods.ts and src/lib/foodIcons.ts.
-import { computed, type Component } from 'vue'
-import { foodIconFor, type FoodIconName } from '../lib/foodIcons'
+import { type Component, computed } from 'vue'
 import Bacon from '~icons/fluent-emoji-flat/bacon'
 import Bagel from '~icons/fluent-emoji-flat/bagel'
 import BaguetteBread from '~icons/fluent-emoji-flat/baguette-bread'
@@ -92,6 +91,7 @@ import TimerClock from '~icons/fluent-emoji-flat/timer-clock'
 import Tomato from '~icons/fluent-emoji-flat/tomato'
 import Waffle from '~icons/fluent-emoji-flat/waffle'
 import WineGlass from '~icons/fluent-emoji-flat/wine-glass'
+import { type FoodIconName, foodIconFor } from '../lib/foodIcons'
 
 // Typed against FoodIconName, so using a new icon in foods.ts or foodIcons.ts
 // without importing it here is a compile error rather than a blank space.

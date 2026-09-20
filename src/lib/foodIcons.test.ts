@@ -3,7 +3,24 @@ import { foodIconFor } from './foodIcons'
 
 describe('foodIconFor', () => {
   it('covers every name offered in the wizard', () => {
-    const chips = { Potatoes: 'potato', Sausages: 'hot-dog', Chicken: 'poultry-leg', Fish: 'fish', Pasta: 'spaghetti', Rice: 'cooked-rice', Eggs: 'egg', Veg: 'broccoli', Meat: 'cut-of-meat', Sauce: 'pot-of-food', Oven: 'fire', Pan: 'cooking', Pizza: 'pizza', Bread: 'bread', Bake: 'shortcake', Tea: 'teacup-without-handle' }
+    const chips = {
+      Potatoes: 'potato',
+      Sausages: 'hot-dog',
+      Chicken: 'poultry-leg',
+      Fish: 'fish',
+      Pasta: 'spaghetti',
+      Rice: 'cooked-rice',
+      Eggs: 'egg',
+      Veg: 'broccoli',
+      Meat: 'cut-of-meat',
+      Sauce: 'pot-of-food',
+      Oven: 'fire',
+      Pan: 'cooking',
+      Pizza: 'pizza',
+      Bread: 'bread',
+      Bake: 'shortcake',
+      Tea: 'teacup-without-handle',
+    }
     for (const [name, icon] of Object.entries(chips)) expect(foodIconFor(name), name).toBe(icon)
   })
 

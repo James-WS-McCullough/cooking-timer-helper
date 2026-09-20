@@ -14,12 +14,18 @@
     <title>Sizzle</title>
     <script>
       // Before first paint, so the page never flashes the wrong theme. Mirrors src/lib/theme.ts.
-      try {
-        var t = localStorage.getItem('sizzle:theme')
-        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
-        document.documentElement.dataset.theme = t
-        if (t === 'light') document.querySelector('meta[name="theme-color"]').content = '#f7f2ec'
-      } catch (e) {}
+      ;(() => {
+        try {
+          let theme = localStorage.getItem('sizzle:theme')
+          if (theme !== 'light' && theme !== 'dark') {
+            theme = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+          }
+          document.documentElement.dataset.theme = theme
+          if (theme === 'light') document.querySelector('meta[name="theme-color"]').content = '#f7f2ec'
+        } catch {
+          /* storage blocked: the stylesheet's dark default stands */
+        }
+      })()
     </script>
   </head>
   <body>

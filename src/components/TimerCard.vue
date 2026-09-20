@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { elapsedMs, firingAlert, nextAlert, remainingMs, statusOf, waitProgress, type Timer } from '../lib/timer'
 import { formatClock, formatDuration, formatSince } from '../lib/format'
+import {
+  elapsedMs,
+  firingAlert,
+  nextAlert,
+  remainingMs,
+  statusOf,
+  type Timer,
+  waitProgress,
+  waitRemainingMs,
+} from '../lib/timer'
 import { acknowledgeTimer, completeTimer, extendTimer, pauseTimer, removeTimer, resumeTimer } from '../store'
 import FoodIcon from './FoodIcon.vue'
 
@@ -18,7 +27,7 @@ const pending = computed(() => ['alert', 'finished', 'due'].includes(status.valu
 const remaining = computed(() => remainingMs(props.timer, props.now))
 // A waiting (synced) card counts down to when the dish goes on, not the cook itself.
 const waiting = computed(() => status.value === 'waiting')
-const clock = computed(() => (waiting.value ? (props.timer.startAt ?? props.now) - props.now : remaining.value))
+const clock = computed(() => (waiting.value ? waitRemainingMs(props.timer, props.now) : remaining.value))
 const progress = computed(() =>
   waiting.value ? waitProgress(props.timer, props.now) : elapsedMs(props.timer, props.now) / props.timer.durationMs,
 )
@@ -33,7 +42,8 @@ const headline = computed(() => {
 })
 
 const hint = computed(() => {
-  if (status.value === 'waiting') return `then ${formatDuration(props.timer.durationMs)}`
+  if (status.value === 'waiting')
+    return props.timer.waitLeftMs != null ? 'Paused' : `then ${formatDuration(props.timer.durationMs)}`
   if (status.value === 'prepped') {
     const { kind, label, everyMs } = props.timer.plan
     if (kind === 'half') return `${label} halfway`

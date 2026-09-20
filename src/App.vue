@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import TimerCard from './components/TimerCard.vue'
-import TimerSheet from './components/TimerSheet.vue'
-import SyncSheet from './components/SyncSheet.vue'
+import AlertSheet from './components/AlertSheet.vue'
+import NewTimerSheet from './components/NewTimerSheet.vue'
+import SettingsSheet from './components/SettingsSheet.vue'
 import SizzleLogo from './components/SizzleLogo.vue'
-import { displayOrder, isPending, statusOf, syncable } from './lib/timer'
+import SyncSheet from './components/SyncSheet.vue'
+import TimerCard from './components/TimerCard.vue'
+import UpdateToast from './components/UpdateToast.vue'
+import VoiceBubble from './components/VoiceBubble.vue'
+import VoiceButton from './components/VoiceButton.vue'
 import { play, soundReady } from './lib/audio'
 import { theme, toggleTheme } from './lib/theme'
-import { state } from './store'
+import { anyPausedByAll, countingTimers, displayOrder, isPending, statusOf, syncable } from './lib/timer'
+import { pauseEverything, resumeEverything, state } from './store'
 
 // Which wizard is open, if any: start a timer now, or prep one for later.
 const sheet = ref<'start' | 'prep' | null>(null)
@@ -15,6 +20,9 @@ const sheet = ref<'start' | 'prep' | null>(null)
 // Rarely opened, and it brings a QR encoder with it: load it on demand.
 const QrSheet = defineAsyncComponent(() => import('./components/QrSheet.vue'))
 const qrOpen = ref(false)
+
+// While timers run, the start screen's loose buttons (voice, theme, QR) live behind a gear instead.
+const settingsOpen = ref(false)
 
 // The beep doubles as the tap that lets the browser sound the alarm later.
 // Prepping a meal: timers are set up and nothing has been started yet. The dock's
@@ -31,6 +39,12 @@ function openSync() {
   void play('beep', true)
   syncOpen.value = true
 }
+
+// Pause all / Resume all: the blunt, legible answer to "the kitchen's fallen behind".
+// Worth offering once there's more than one thing counting; once used, it stays
+// until everything it stopped has been resumed.
+const pausedAll = computed(() => anyPausedByAll(state.timers))
+const showPauseAll = computed(() => pausedAll.value || countingTimers(state.timers) >= 2)
 
 // The bell on a card: edit that timer's mid-way alerts. Held by id, so the sheet
 // simply goes away if the timer finishes or is removed while it's open.
@@ -90,6 +104,7 @@ const ordered = computed(() => {
 // The "is-clearing" class (which makes the neighbours wait a beat) is set on the
 // DOM directly: going through reactive state would re-render the list, and a
 // re-render makes TransitionGroup finish any glide in progress on the spot.
+const grid = ref<{ $el: HTMLElement }>()
 let clearing = 0
 function pinInPlace(el: Element) {
   const card = el as HTMLElement
@@ -97,13 +112,13 @@ function pinInPlace(el: Element) {
   card.style.left = `${card.offsetLeft}px`
   card.style.width = `${card.offsetWidth}px`
   clearing++
-  card.parentElement?.classList.add('is-clearing')
+  grid.value?.$el.classList.add('is-clearing')
 }
 
 function afterLeave() {
   if (--clearing <= 0) {
     clearing = 0
-    document.querySelector('.grid')?.classList.remove('is-clearing')
+    grid.value?.$el.classList.remove('is-clearing')
   }
 }
 
@@ -112,7 +127,16 @@ const needsSoundTap = computed(() => !soundReady.value && state.timers.length > 
 
 function onKey(e: KeyboardEvent) {
   const typing = e.target instanceof HTMLInputElement
-  if ((e.key === 'n' || e.key === 'p') && !typing && !sheet.value && !alertsFor.value && !syncOpen.value && !e.metaKey && !e.ctrlKey) {
+  if (
+    (e.key === 'n' || e.key === 'p') &&
+    !typing &&
+    !sheet.value &&
+    !alertsFor.value &&
+    !syncOpen.value &&
+    !settingsOpen.value &&
+    !e.metaKey &&
+    !e.ctrlKey
+  ) {
     e.preventDefault()
     openSheet(e.key === 'p' ? 'prep' : 'start')
   }
@@ -123,6 +147,32 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <div class="app">
+    <UpdateToast />
+    <VoiceBubble v-if="state.timers.length" />
+
+    <!-- A slim strip above the list, scrolling with it: a gear pinned to the corner would end up
+         sitting on whichever card's bell and ✕ scrolled underneath it. Sizzle's speech bubble
+         drops into this strip too, instead of over the first card. -->
+    <div v-if="state.timers.length" class="topbar">
+      <button class="gear" aria-label="Settings" @click="settingsOpen = true">
+        <!-- Sliders, not a cog: at this size a cog reads as the theme toggle's sun. -->
+        <svg
+          viewBox="0 0 24 24"
+          width="22"
+          height="22"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.2"
+          stroke-linecap="round"
+        >
+          <path d="M4 6.5h4M13 6.5h7M4 12h10M19 12h1M4 17.5h2M11 17.5h9" />
+          <circle cx="10.5" cy="6.5" r="2.3" />
+          <circle cx="16.5" cy="12" r="2.3" />
+          <circle cx="8.5" cy="17.5" r="2.3" />
+        </svg>
+      </button>
+    </div>
     <Transition name="banner">
       <button v-if="needsSoundTap" class="banner" @click="play('beep', true)">
         <strong>Tap to turn sound on</strong>
@@ -130,8 +180,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </button>
     </Transition>
 
-    <main :class="{ 'with-sync': canSync }">
+    <main :class="{ 'has-timers': state.timers.length > 0, 'with-sync': canSync }">
       <TransitionGroup
+        ref="grid"
         name="cards"
         tag="div"
         class="grid"
@@ -158,6 +209,24 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </div>
       </Transition>
     </main>
+
+    <Transition name="sync">
+      <button
+        v-if="showPauseAll"
+        class="pause-all"
+        :class="{ resume: pausedAll, 'above-sync': canSync }"
+        @click="pausedAll ? resumeEverything() : pauseEverything()"
+      >
+        <svg v-if="pausedAll" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5Z" fill="currentColor" />
+        </svg>
+        <svg v-else viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <rect x="5" y="4" width="5" height="16" rx="1.5" fill="currentColor" />
+          <rect x="14" y="4" width="5" height="16" rx="1.5" fill="currentColor" />
+        </svg>
+        {{ pausedAll ? 'Resume all' : 'Pause all' }}
+      </button>
+    </Transition>
 
     <Transition name="dock">
       <div v-if="state.timers.length" class="dock">
@@ -188,6 +257,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
     <!-- Outside the start screen's own transition: a transformed parent would drag a fixed child around. -->
     <Transition name="welcome">
+      <VoiceButton v-if="!state.timers.length" />
+    </Transition>
+    <Transition name="welcome">
       <button
         v-if="!state.timers.length"
         class="corner-button theme-button"
@@ -216,8 +288,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </Transition>
 
     <SyncSheet v-if="syncOpen && canSync" @close="syncOpen = false" />
-    <TimerSheet v-else-if="sheet" :prep="sheet === 'prep'" @close="sheet = null" />
-    <TimerSheet v-else-if="alertsFor" :key="alertsFor.id" :alerts-for="alertsFor" @close="alertsForId = null" />
+    <NewTimerSheet v-else-if="sheet" :prep="sheet === 'prep'" @close="sheet = null" />
+    <AlertSheet v-else-if="alertsFor" :key="alertsFor.id" :timer="alertsFor" @close="alertsForId = null" />
+    <SettingsSheet v-if="settingsOpen" @close="settingsOpen = false" @qr="((settingsOpen = false), (qrOpen = true))" />
     <QrSheet v-if="qrOpen" @close="qrOpen = false" />
   </div>
 </template>
@@ -230,6 +303,26 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   max-width: 1200px;
   margin: 0 auto;
   padding: calc(14px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+}
+
+.topbar {
+  display: flex;
+  justify-content: flex-end;
+  height: 40px;
+  margin: -8px -4px 6px 0;
+}
+
+.gear {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 40px;
+  border-radius: 12px;
+  color: var(--text-dim);
+}
+
+.gear:active {
+  transform: scale(0.92);
 }
 
 .banner {
@@ -258,8 +351,12 @@ main {
   padding-bottom: calc(110px + env(safe-area-inset-bottom));
 }
 
+main.has-timers {
+  padding-bottom: calc(170px + env(safe-area-inset-bottom)); /* dock, plus the Pause all button above it */
+}
+
 main.with-sync {
-  padding-bottom: calc(180px + env(safe-area-inset-bottom));
+  padding-bottom: calc(240px + env(safe-area-inset-bottom));
 }
 
 .grid {
@@ -405,6 +502,39 @@ h1 {
   .dock .prep.as-new {
     padding: 0 16px 0 12px;
   }
+}
+
+/* Floats at the bottom right, just above the dock. */
+.pause-all {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: calc(108px + env(safe-area-inset-bottom));
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 18px 0 14px;
+  border-radius: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 750;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
+}
+
+.pause-all.above-sync {
+  bottom: calc(176px + env(safe-area-inset-bottom));
+}
+
+.pause-all.resume {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.pause-all:active {
+  transform: scale(0.95);
 }
 
 /* Prepping: the two dock buttons trade looks as well as jobs. */

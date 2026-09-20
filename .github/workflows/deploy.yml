@@ -24,7 +24,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
+      # Biome (lint + format), vue-tsc, the e2e type-check and the unit tests.
+      - run: npm run check
+      # The real build, driven in headless Chrome (already on the runner). A failure here stops the deploy.
+      - run: npm run test:e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results
+          retention-days: 7
       # A project site lives under /<repo-name>/, so every asset URL needs that prefix.
       - run: npm run build -- --base=/${{ github.event.repository.name }}/
       - uses: actions/configure-pages@v5

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Loaded on demand (see App.vue) so the QR encoder stays out of the main bundle.
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+
 import { encode } from 'uqr'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import SizzleLogo from './SizzleLogo.vue'
 
 const emit = defineEmits<{ close: [] }>()

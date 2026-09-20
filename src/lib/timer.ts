@@ -27,7 +27,7 @@ export interface Timer {
   alerts: TimerAlert[]
   elapsedMs: number // cooking time banked before the current run
   runningSince: number | null // wall-clock of the last resume; null while stopped
-  pausedBy: 'user' | 'alert' | null
+  pausedBy: 'user' | 'alert' | 'all' | null // 'all' = stopped by Pause all, so Resume all knows to restart it
   finishedAt: number | null
   createdAt: number
   prepped?: boolean // set up in advance, waiting for its first press of play
@@ -36,6 +36,7 @@ export interface Timer {
   syncedAt?: number | null
   startAt?: number | null
   due?: boolean // pre-timer has run out; waiting for that confirmation
+  waitLeftMs?: number | null // pre-timer frozen by Pause all, with this much still to go
 }
 
 export type TimerStatus = 'prepped' | 'waiting' | 'due' | 'running' | 'paused' | 'alert' | 'finished'
@@ -120,7 +121,7 @@ export type TimerEvent = 'alert' | 'finished' | 'due'
  */
 export function advance(t: Timer, now: number): TimerEvent | null {
   if (t.prepped) {
-    if (t.startAt == null || t.due || now < t.startAt) return null
+    if (t.startAt == null || t.due || t.waitLeftMs != null || now < t.startAt) return null
     t.due = true
     return 'due'
   }
@@ -175,7 +176,7 @@ export function pause(t: Timer, now: number): void {
 export function resume(t: Timer, now: number): void {
   if (t.finishedAt !== null || t.runningSince !== null) return
   t.prepped = false
-  t.syncedAt = t.startAt = null
+  t.syncedAt = t.startAt = t.waitLeftMs = null
   t.due = false
   t.pausedBy = null
   t.runningSince = now
@@ -250,10 +251,54 @@ export function syncFinish(timers: Timer[], now: number): void {
   }
 }
 
+/** How long until a waiting timer's dish goes on. */
+export function waitRemainingMs(t: Timer, now: number): number {
+  return t.waitLeftMs ?? Math.max(0, (t.startAt ?? now) - now)
+}
+
 /** How far through its pre-timer a waiting timer is, 0–1. */
 export function waitProgress(t: Timer, now: number): number {
   if (t.startAt == null || t.syncedAt == null || t.startAt <= t.syncedAt) return 1
-  return Math.min(1, Math.max(0, (now - t.syncedAt) / (t.startAt - t.syncedAt)))
+  return Math.min(1, Math.max(0, 1 - waitRemainingMs(t, now) / (t.startAt - t.syncedAt)))
+}
+
+// ---- Pause all ----
+// Everything that is counting stops together and later restarts together, which
+// is the simple, legible way to keep a synced meal lined up when the kitchen
+// falls behind: nothing depends on anything else, the whole plan just shifts.
+
+const isCounting = (t: Timer) => statusOf(t) === 'running' || (statusOf(t) === 'waiting' && t.waitLeftMs == null)
+const stoppedByAll = (t: Timer) => t.pausedBy === 'all' || t.waitLeftMs != null
+
+export function countingTimers(timers: Timer[]): number {
+  return timers.filter(isCounting).length
+}
+
+export function anyPausedByAll(timers: Timer[]): boolean {
+  return timers.some(stoppedByAll)
+}
+
+export function pauseAll(timers: Timer[], now: number): void {
+  for (const t of timers) {
+    if (!isCounting(t)) continue
+    if (t.prepped) t.waitLeftMs = waitRemainingMs(t, now)
+    else {
+      pause(t, now)
+      t.pausedBy = 'all'
+    }
+  }
+}
+
+/** Restarts only what Pause all stopped; a timer the cook paused by hand stays paused. */
+export function resumeAll(timers: Timer[], now: number): void {
+  for (const t of timers) {
+    if (t.prepped && t.waitLeftMs != null) {
+      const whole = (t.startAt ?? now) - (t.syncedAt ?? now)
+      t.startAt = now + t.waitLeftMs
+      t.syncedAt = t.startAt - whole // keeps its progress bar where it was
+      t.waitLeftMs = null
+    } else if (t.pausedBy === 'all') resume(t, now)
+  }
 }
 
 /**
@@ -263,7 +308,8 @@ export function waitProgress(t: Timer, now: number): number {
  * events (time added, pause, an alert firing).
  */
 export function displayOrder(timers: Timer[], now: number): Timer[] {
-  const rank = (t: Timer) => ({ finished: 0, alert: 1, due: 1, running: 2, paused: 2, waiting: 3, prepped: 4 })[statusOf(t)]
+  const rank = (t: Timer) =>
+    ({ finished: 0, alert: 1, due: 1, running: 2, paused: 2, waiting: 3, prepped: 4 })[statusOf(t)]
   const left = (t: Timer) => (t.prepped ? (t.startAt ?? 0) : remainingMs(t, now))
   return [...timers].sort((a, b) => rank(a) - rank(b) || left(a) - left(b) || a.createdAt - b.createdAt)
 }

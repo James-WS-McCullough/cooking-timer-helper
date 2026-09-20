@@ -1,59 +1,46 @@
 import { reactive, watch } from 'vue'
+import { installAudio, play, soundReady } from './lib/audio'
+import { tidyName } from './lib/format'
+import { rememberTime } from './lib/history'
+import { type Preset, parseSaved, STORAGE_KEY, serialise } from './lib/storage'
 import {
+  type AlertPlan,
   acknowledge,
   addTime,
   advance,
   createTimer,
   isPending,
   pause,
+  pauseAll,
   resume,
+  resumeAll,
   setPlan,
   statusOf,
   syncFinish,
-  uid,
-  type AlertPlan,
   type Timer,
   type TimerEvent,
+  uid,
 } from './lib/timer'
-import { installAudio, play, soundReady } from './lib/audio'
-import { tidyName } from './lib/format'
-import { rememberTime, type TimeHistory } from './lib/history'
+import { rehearse, say } from './lib/voice'
+import { alertPhrase, duePhrase, finishedPhrase, startedPhrase, syncedPhrase, waitingPhrase } from './lib/voice/phrases'
 import { installWakeLock, setWakeLock } from './lib/wakeLock'
 
-export interface Preset {
-  id: string
-  name: string
-  durationMs: number
-  plan: AlertPlan
-}
+export type { Preset } from './lib/storage'
 
-const STORAGE_KEY = 'sizzle:v1'
-
-interface Saved {
-  timers: Timer[]
-  presets: Preset[]
-  history: TimeHistory // times last used per timer name
-}
-
-function load(): Saved {
+function readStorage(): string | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const data = JSON.parse(raw)
-      return {
-        timers: Array.isArray(data.timers) ? data.timers : [],
-        presets: Array.isArray(data.presets) ? data.presets : [],
-        history: data.history && typeof data.history === 'object' ? data.history : {},
-      }
-    }
+    return localStorage.getItem(STORAGE_KEY)
   } catch {
-    /* private mode or corrupt data: start fresh */
+    return null // private mode, or storage blocked
   }
-  return { timers: [], presets: [], history: {} }
 }
+
+const saved = parseSaved(readStorage())
 
 export const state = reactive({
-  ...load(),
+  timers: saved.timers,
+  presets: saved.presets,
+  history: saved.history,
   now: Date.now(),
   // Bumped each time the attention sound plays, so pending cards can shimmer along with it.
   pulse: 0,
@@ -63,6 +50,33 @@ export const state = reactive({
 const NOTIFY_EVERY_MS = 15_000
 let nextNotifyAt = 0
 
+// The robot speaks after the sound effect that announces the same thing, not over it,
+// and repeats herself far less often than the chime does.
+const SPEAK_AFTER_SFX_MS = 1900
+const SPOKEN_REMINDER_EVERY = 4 // reminders, i.e. once a minute
+let remindersSinceSpoken = 0
+
+// She picks her lines at random, so a timer's big lines are chosen when it's created:
+// that way they can be synthesised in advance and are instant when the moment comes.
+type Moment = 'finished' | 'due'
+const chosen = new Map<string, Partial<Record<Moment, string>>>()
+
+function lineFor(t: Timer, moment: Moment): string {
+  const lines = chosen.get(t.id) ?? {}
+  lines[moment] ??= moment === 'finished' ? finishedPhrase(t) : duePhrase(t)
+  chosen.set(t.id, lines)
+  return lines[moment]
+}
+
+function announce(t: Timer, event: TimerEvent): void {
+  if (event === 'alert') {
+    say(alertPhrase(t, t.alerts.find((a) => a.state === 'firing')?.label ?? t.plan.label), SPEAK_AFTER_SFX_MS, 'urgent')
+    return
+  }
+  say(lineFor(t, event), SPEAK_AFTER_SFX_MS, 'urgent')
+  delete chosen.get(t.id)?.[event] // said; if it comes round again (+30s), she'll say something new
+}
+
 function tick(): void {
   const now = Date.now()
   state.now = now
@@ -70,6 +84,7 @@ function tick(): void {
   let arrived: TimerEvent | null = null
   for (const t of state.timers) {
     const event = advance(t, now)
+    if (event) announce(t, event)
     if (event === 'finished' || (event && !arrived)) arrived = event
   }
 
@@ -79,6 +94,11 @@ function tick(): void {
     void play(arrived === 'finished' ? 'complete' : 'notify')
     nextNotifyAt = now + NOTIFY_EVERY_MS
     state.pulse++
+    if (arrived) remindersSinceSpoken = 0
+    else if (++remindersSinceSpoken >= SPOKEN_REMINDER_EVERY) {
+      remindersSinceSpoken = 0
+      say(waitingPhrase(state.timers.filter(isPending).map((t) => t.name)), SPEAK_AFTER_SFX_MS)
+    }
   }
 
   // Anything counting down or waiting on the cook keeps the screen awake.
@@ -87,7 +107,10 @@ function tick(): void {
 
 /** Add a timer. Prepped ones just wait in the list until their play button is pressed. */
 export function startTimer(name: string, durationMs: number, plan: AlertPlan, prepped = false): void {
-  state.timers.push(createTimer(tidyName(name), durationMs, plan, Date.now(), prepped))
+  const timer = createTimer(tidyName(name), durationMs, plan, Date.now(), prepped)
+  state.timers.push(timer)
+  rehearse(lineFor(timer, 'finished'))
+  if (!prepped) say(startedPhrase(timer), SPEAK_AFTER_SFX_MS)
   rememberTime(state.history, name, durationMs)
   void play(prepped ? 'beep' : 'start', true)
   tick()
@@ -97,9 +120,26 @@ export function startPreset(preset: Preset, prepped = false): void {
   startTimer(preset.name, preset.durationMs, preset.plan, prepped)
 }
 
+export function pauseEverything(): void {
+  pauseAll(state.timers, Date.now())
+  void play('beep', true)
+  tick()
+}
+
+export function resumeEverything(): void {
+  resumeAll(state.timers, Date.now())
+  void play('start', true)
+  tick()
+}
+
 /** Sync Finish: longest prepped timer starts now, the rest get pre-timers so everything lands together. */
 export function syncAndStart(): void {
   syncFinish(state.timers, Date.now())
+  for (const t of state.timers) if (t.startAt != null) rehearse(lineFor(t, 'due'))
+  say(
+    syncedPhrase(Math.max(0, ...state.timers.filter((t) => !t.prepped || t.startAt != null).map((t) => t.durationMs))),
+    SPEAK_AFTER_SFX_MS,
+  )
   void play('start', true)
   tick()
 }
@@ -121,6 +161,7 @@ export function removePreset(id: string): void {
 }
 
 export function removeTimer(id: string): void {
+  chosen.delete(id)
   state.timers = state.timers.filter((t) => t.id !== id)
   tick()
 }
@@ -157,11 +198,13 @@ export const resumeTimer = (id: string) =>
     const firstStart = t.prepped
     resume(t, now)
     void play(firstStart ? 'start' : 'beep', true)
+    if (firstStart) say(startedPhrase(t), SPEAK_AFTER_SFX_MS)
   })
 
 export const setTimerPlan = (id: string, plan: AlertPlan) =>
   withTimer(id, (t, now) => {
     setPlan(t, plan, now)
+    if (plan.kind !== 'none') rehearse(alertPhrase(t, plan.label))
     void play('beep', true)
   })
 
@@ -187,7 +230,7 @@ export function installStore(): void {
     () => {
       try {
         const { timers, presets, history } = state
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ timers, presets, history }))
+        localStorage.setItem(STORAGE_KEY, serialise({ timers, presets, history }))
       } catch {
         /* storage full or unavailable */
       }

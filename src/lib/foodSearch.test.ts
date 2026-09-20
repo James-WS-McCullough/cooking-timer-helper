@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { searchFoods } from './foodSearch'
 import { FOODS, type FoodEntry } from '../data/foods'
+import { searchFoods } from './foodSearch'
 
 const LIST: FoodEntry[] = [
   ['Aubergine', 'eggplant', 'eggplant brinjal'],
@@ -37,7 +37,7 @@ describe('searchFoods', () => {
 
   it('ignores case, accents and punctuation', () => {
     expect(names('SAUTE')).toEqual(['Sautéed mushrooms'])
-    expect(names("eggs, ben")).toEqual(['Eggs Benedict'])
+    expect(names('eggs, ben')).toEqual(['Eggs Benedict'])
   })
 })
 
