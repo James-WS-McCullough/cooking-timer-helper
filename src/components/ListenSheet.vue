@@ -6,6 +6,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { formatClock } from '../lib/format'
 import { finishListening, ListenError, listen, mic, micReady, stopListening } from '../lib/listen'
+import { speechModel } from '../lib/listen/models'
 import { parseSpoken, type Spoken } from '../lib/spoken'
 import { NO_ALERTS } from '../lib/timer'
 import { startTimer } from '../store'
@@ -71,7 +72,7 @@ onBeforeUnmount(() => {
         <span class="disc"><MicIcon :size="44" /></span>
         <h2 id="listen-title">Say it instead</h2>
         <p class="lead">Tap the mic, then say the food and the time: “rice, 10 minutes”.</p>
-        <p class="small">The first use downloads a speech model (about 65 MB), so Wi-Fi is best. After that it works offline, and what you say never leaves this device.</p>
+        <p class="small">The first use downloads a speech model ({{ speechModel.download }}), so Wi-Fi is best. After that it works offline, and what you say never leaves this device.</p>
         <button class="main" @click="hear">Turn on the mic</button>
         <button class="other" @click="emit('close')">Not now</button>
       </template>

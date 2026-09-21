@@ -114,6 +114,12 @@ function readNumber(t: string[], i: number): Read | null {
   const word = t[i]
   if (word === undefined) return null
   if (/^\d+(\.\d+)?$/.test(word)) return { value: Number(word), next: i + 1 }
+  // "for the five minutes" is what "forty-five minutes" often comes back as
+  if (word === 'for' && t[i + 1] === 'the') {
+    const ones = /^[1-9]$/.test(t[i + 2] ?? '') ? Number(t[i + 2]) : SMALL.indexOf(t[i + 2] ?? '')
+    if (ones >= 1 && ones <= 9 && (t[i + 3] ?? '') in UNITS) return { value: 40 + ones, next: i + 3 }
+    if ((t[i + 2] ?? '') in UNITS) return { value: 40, next: i + 2 }
+  }
   const tens = TENS.indexOf(word)
   if (tens >= 0) {
     const unit = SMALL.indexOf(t[i + 1] ?? '')
@@ -251,15 +257,52 @@ function oneLetterApart(a: string, b: string): boolean {
 }
 
 /**
- * The food-list entry these words clearly mean, or undefined. Deliberately strict: the
- * exact name, its singular/plural, or one letter out with the same first letter and only
- * one such candidate ("rise" → Rice). Anything looser would rename a cook's own dish.
+ * Roughly how a word sounds, so that what the speech model wrote can be compared with what
+ * was probably said: "ties" and "thighs" are both "tes", "rose" is one sound short of "roast".
+ * Consonants are kept (with the usual English spellings folded together), each run of vowels
+ * becomes E if it starts with e/i/y and A otherwise, so "beans" and "buns" stay apart.
+ */
+export function soundOf(text: string): string {
+  return text
+    .split(' ')
+    .map((word) =>
+      word
+        .replace(/igh/g, 'i')
+        .replace(/gh|(?<=[^aeiouy])e$/g, '')
+        .replace(/^kn/, 'n')
+        .replace(/^wr/, 'r')
+        .replace(/mb$/, 'm')
+        .replace(/th/g, 't')
+        .replace(/ph/g, 'f')
+        .replace(/wh/g, 'w')
+        .replace(/dg|g(?=[eiy])/g, 'j')
+        .replace(/c(?=[eiy])|z/g, 's')
+        .replace(/ck|c|q/g, 'k')
+        .replace(/x/g, 'ks')
+        .replace(/[eiy][aeiouy]*/g, 'E')
+        .replace(/[aou][aeiouy]*/g, 'A')
+        .replace(/(.)\1+/g, '$1'),
+    )
+    .join(' ')
+}
+
+/**
+ * The food-list entry these words clearly mean, or undefined. In order: the exact name or its
+ * singular/plural; one letter out ("past" → Pasta); sounding the same ("chicken ties" → Chicken
+ * thighs) or one sound out ("rose potatoes" → Roast potatoes). The loose ones need the same
+ * first letter and exactly one candidate: anything looser would rename a cook's own dish.
  */
 function matchFood(spoken: string, foods: readonly FoodEntry[]): string | undefined {
   const listed = listedFood(spoken, foods)
   if (listed || spoken.length < 4) return listed
-  const near = foods.filter(([name]) => normalise(name)[0] === spoken[0] && oneLetterApart(normalise(name), spoken))
-  return near.length === 1 ? near[0]?.[0] : undefined
+  const names = foods.map(([name]) => ({ name, key: normalise(name) })).filter((f) => f.key[0] === spoken[0])
+  const only = (found: typeof names) => (found.length === 1 ? found[0]?.name : undefined)
+  const sound = soundOf(spoken)
+  return (
+    only(names.filter((f) => oneLetterApart(f.key, spoken))) ??
+    only(names.filter((f) => soundOf(f.key) === sound)) ??
+    (sound.length >= 5 ? only(names.filter((f) => oneLetterApart(soundOf(f.key), sound))) : undefined)
+  )
 }
 
 /** The entry with exactly this name, give or take a plural. */

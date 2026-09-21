@@ -48,7 +48,7 @@ test.beforeEach(async ({ page }) => {
 test('the mic introduces itself first, and downloads nothing until asked', async ({ page }) => {
   await page.getByRole('button', { name: 'Say a timer' }).click()
   const intro = page.getByRole('dialog', { name: 'Say it instead' })
-  await expect(intro).toContainText('65 MB')
+  await expect(intro).toContainText('90 MB')
   await expect(intro).toContainText('never leaves this device')
   await intro.getByRole('button', { name: 'Not now' }).click()
   await expect(intro).toBeHidden()

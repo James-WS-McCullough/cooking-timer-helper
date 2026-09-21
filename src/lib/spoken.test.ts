@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseSpoken } from './spoken'
+import { parseSpoken, soundOf } from './spoken'
 
 const MIN = 60_000
 const heard = (text: string) => {
@@ -90,12 +90,25 @@ describe('parseSpoken', () => {
     expect(heard('An hour and a half-lamb')).toEqual(['Lamb', 90, false])
   })
 
+  it('snaps a name to the food list when it sounds like one, from real transcripts', () => {
+    expect(heard('Chicken ties thirty five minutes.')).toEqual(['Chicken thighs', 35, false])
+    expect(heard('Rose potatoes for the five minutes.')).toEqual(['Roast potatoes', 45, false])
+    expect(heard('Supe Fifteen minutes.')).toEqual(['Soup', 15, false])
+    expect(heard('The dull wants 25 minutes.')).toEqual(['Dal', 25, false])
+    expect(heard('Could you set a timer for the lasagna for the minutes?')).toEqual(['Lasagne', 40, false])
+    expect(soundOf('chicken thighs')).toBe(soundOf('chicken ties'))
+    expect(soundOf('beans')).not.toBe(soundOf('buns'))
+  })
+
   it("keeps a cook's own name, only tidied", () => {
     expect(heard("grandma's pie 40")).toEqual(['Grandmas pie', 40, false])
     expect(heard('cheesy garlic bread fifteen')).toEqual(['Cheesy garlic bread', 15, false])
     // "Thyme" is always heard as "time", which at the front of a name is sentence, not food.
     expect(heard('Time and Garlic Bread Fifteen.')).toEqual(['Garlic bread', 15, false])
     expect(heard('bake 25')).toEqual(['Bake', 25, false]) // one letter from Cake, but not the same first letter
+    expect(heard('peaking duck 90 minutes')).toEqual(['Peaking duck', 90, false]) // not on the list: left as heard
+    expect(heard('Suit 15 minutes')).toEqual(['Suit', 15, false]) // too short and too different to call it Soup
+    expect(heard('buns 10 minutes')).toEqual(['Buns', 10, false]) // doesn't sound like Beans
   })
 
   it('prefers the number that has a unit, else the last one', () => {

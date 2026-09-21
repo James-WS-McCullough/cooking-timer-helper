@@ -1,7 +1,9 @@
 // The page's side of the speech model: starts the worker (a lazy chunk of its own, so
 // none of it loads until the mic is first used) and talks to it.
 
-export type ToWorker = { type: 'load' } | { type: 'transcribe'; id: number; audio: Float32Array }
+import { type SpeechModel, speechModel } from './models'
+
+export type ToWorker = { type: 'load'; model: SpeechModel } | { type: 'transcribe'; id: number; audio: Float32Array }
 export type FromWorker =
   | { type: 'progress'; done: number }
   | { type: 'ready' }
@@ -45,7 +47,7 @@ export function prepare(progress?: Progress): Promise<void> {
   onProgress = progress
   ready ??= new Promise<void>((resolve, reject) => {
     settleReady = { resolve, reject }
-    start().postMessage({ type: 'load' } satisfies ToWorker)
+    start().postMessage({ type: 'load', model: { ...speechModel } } satisfies ToWorker)
   })
   // A failed start (offline, blocked download) shouldn't be remembered forever.
   ready.catch(() => {

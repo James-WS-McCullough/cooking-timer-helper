@@ -2,8 +2,9 @@
 // device. Like the voice, nothing heavy loads until the cook first asks for it.
 
 import { reactive } from 'vue'
-import { prepare, transcribe } from './moonshine'
+import { speechModel } from './models'
 import { type Recording, record } from './recorder'
+import { prepare, transcribe } from './transcriber'
 
 const KEY = 'sizzle:mic'
 
@@ -22,10 +23,11 @@ export class ListenError extends Error {
   }
 }
 
-/** Has the model been downloaded before? Until then the mic introduces itself (and its size) first. */
+/** Has the model in use been downloaded before? (A change of model is announced like the first.)
+ *  Until then the mic introduces itself (and its size) first. */
 export function micReady(): boolean {
   try {
-    return localStorage.getItem(KEY) === 'ready'
+    return localStorage.getItem(KEY) === speechModel.tag
   } catch {
     return false
   }
@@ -33,7 +35,7 @@ export function micReady(): boolean {
 
 function rememberReady(): void {
   try {
-    localStorage.setItem(KEY, 'ready')
+    localStorage.setItem(KEY, speechModel.tag)
   } catch {
     /* private mode: it'll introduce itself again next time */
   }
