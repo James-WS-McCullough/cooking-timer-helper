@@ -8,6 +8,14 @@
 //   Whisper tiny.en   38 / 27           Moonshine tiny 34 / 25 (the mic's first model)
 //   Whisper small.en  47 / 42   far too big (250 MB) and slow for a phone
 //
+// Memory is the other half of it. Peak size of the page while an utterance is worked out, in
+// desktop Chrome (it idles at ~185 MB; iOS kills a page somewhere past a gigabyte, which shows
+// as a white flash and the app starting again):
+//   Whisper base.en ~1.6 GB   Moonshine base ~1.1 GB   Whisper tiny ~1.1 GB   Moonshine tiny ~0.9 GB
+// About 550 MB of that is the ONNX runtime whatever the model, and runtime settings (memory
+// arena, prepacking, graph optimisation, threads) don't move it, so the worker is shut down
+// after every utterance (release() in transcriber.ts) and the page falls back to ~450 MB.
+//
 // Whisper base is the default. While that's being judged on real phones, opening Sizzle once
 // with ?mic=moonshine (or ?mic=whisper to go back) switches this device over.
 // TODO: drop the loser, and the switch, once it's settled.

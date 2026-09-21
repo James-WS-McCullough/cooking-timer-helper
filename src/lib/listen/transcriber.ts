@@ -56,6 +56,23 @@ export function prepare(progress?: Progress): Promise<void> {
   return ready
 }
 
+/**
+ * Shut the worker down, and with it everything the model holds. Not tidiness: loaded and
+ * run, the model takes the page past a gigabyte and none of it comes back while the worker
+ * lives (a WebAssembly heap never shrinks), which is enough for iOS to kill the page. So it
+ * lives for one utterance. Loading it again from the cache happens while the cook is talking.
+ */
+export function release(): void {
+  const err = new Error('released')
+  settleReady?.reject(err)
+  for (const w of waiting.values()) w.reject(err)
+  waiting.clear()
+  settleReady = undefined
+  ready = undefined
+  worker?.terminate()
+  worker = undefined
+}
+
 /** 16 kHz mono audio → what was said. */
 export async function transcribe(audio: Float32Array): Promise<string> {
   await prepare(onProgress)

@@ -4,7 +4,7 @@
 import { reactive } from 'vue'
 import { speechModel } from './models'
 import { type Recording, record } from './recorder'
-import { prepare, transcribe } from './transcriber'
+import { prepare, release, transcribe } from './transcriber'
 
 const KEY = 'sizzle:mic'
 
@@ -46,8 +46,9 @@ let recording: Recording | undefined
 let run = 0 // each listen() is one run; calling it off moves the number on
 
 function getModel(): Promise<void> {
+  const firstTime = !micReady() // later loads come from the cache: not worth a percentage
   model ??= prepare((done) => {
-    mic.downloading = done < 1 ? done : null
+    if (firstTime) mic.downloading = done < 1 ? done : null
   }).then(() => {
     mic.downloading = null
     rememberReady()
@@ -107,6 +108,9 @@ export async function listen(): Promise<string | null> {
 }
 
 function reset(): void {
+  // The model goes after every utterance, heard or not: see release().
+  model = undefined
+  release()
   recording = undefined
   mic.phase = 'idle'
   mic.level = 0

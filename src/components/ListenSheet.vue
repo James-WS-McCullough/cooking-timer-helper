@@ -3,7 +3,7 @@
 // time only) what it is and what it downloads, then listening, then what it heard with
 // one big button to start it. A wrong guess costs a tap on "Try again", never a wrong timer.
 // Heard a name but no time? The wizard takes over at "How long?".
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { formatClock } from '../lib/format'
 import { finishListening, ListenError, listen, mic, micReady, stopListening } from '../lib/listen'
 import { speechModel } from '../lib/listen/models'
@@ -25,6 +25,14 @@ const busyTitle = computed(() => {
   if (mic.phase === 'thinking') return 'Working it out…'
   return mic.downloading === null ? 'Getting ready…' : `Downloading ${Math.round(mic.downloading * 100)}%`
 })
+
+// The mic has just opened: a short buzz where the phone can (not iOS), for eyes that are on the pan.
+watch(
+  () => mic.phase,
+  (phase) => {
+    if (phase === 'listening') navigator.vibrate?.(40)
+  },
+)
 
 async function hear() {
   view.value = 'busy'
@@ -78,12 +86,17 @@ onBeforeUnmount(() => {
       </template>
 
       <template v-else-if="view === 'busy'">
-        <span class="disc" :class="{ live: mic.phase === 'listening', waiting: mic.phase !== 'listening' }">
-          <!-- A real element, not a pseudo: it grows with the cook's voice. -->
+        <!-- People speak the moment they've tapped, but the mic takes a moment to open and nothing
+             said before then is heard. So until it's open this is plainly off (grey, a spinner,
+             "not listening yet"), and the change to blue is sudden enough to be the cue. -->
+        <span class="disc" :class="{ live: mic.phase === 'listening', off: mic.phase === 'loading', waiting: mic.phase === 'thinking' }">
+          <!-- Real elements, not pseudos: one grows with the cook's voice, one spins while the mic opens. -->
           <span class="ring" :style="{ transform: `scale(${1 + mic.level * 0.6})` }" />
+          <span class="spinner" />
           <MicIcon :size="44" />
         </span>
-        <h2 id="listen-title" role="status">{{ busyTitle }}</h2>
+        <h2 id="listen-title" role="status" :class="{ dim: mic.phase === 'loading' }">{{ busyTitle }}</h2>
+        <p v-if="mic.phase === 'loading'" class="small">Not listening yet: wait for the blue mic.</p>
         <template v-if="mic.phase === 'listening'">
           <p class="lead">“Rice, 10 minutes”</p>
           <p class="small">Start with “prepare” to set it up for later.</p>
@@ -190,6 +203,38 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
+.disc.off {
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+
+.disc.off svg {
+  opacity: 0.45;
+}
+
+.spinner {
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-top-color: var(--text-dim);
+  opacity: 0;
+}
+
+.off .spinner {
+  opacity: 0.7;
+  animation: spin 0.9s linear infinite;
+}
+
+/* The mic has opened: say so with a jolt, not a fade. */
+.disc.live {
+  animation: open 0.3s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+
+h2.dim {
+  color: var(--text-dim);
+}
+
 .disc.waiting {
   animation: busy 1.1s ease-in-out infinite;
 }
@@ -261,6 +306,18 @@ h2 {
   transform: scale(0.98);
 }
 
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes open {
+  from {
+    transform: scale(0.8);
+  }
+}
+
 @keyframes busy {
   50% {
     transform: scale(0.94);
@@ -284,7 +341,9 @@ h2 {
 @media (prefers-reduced-motion: reduce) {
   .scrim,
   .panel,
-  .disc.waiting {
+  .disc.waiting,
+  .disc.live,
+  .off .spinner {
     animation: none;
   }
   .ring {
