@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AlertSheet from './components/AlertSheet.vue'
+import MicIcon from './components/MicIcon.vue'
 import NewTimerSheet from './components/NewTimerSheet.vue'
 import SettingsSheet from './components/SettingsSheet.vue'
 import SizzleLogo from './components/SizzleLogo.vue'
@@ -16,6 +17,23 @@ import { pauseEverything, resumeEverything, state } from './store'
 
 // Which wizard is open, if any: start a timer now, or prep one for later.
 const sheet = ref<'start' | 'prep' | null>(null)
+
+// The mic: say a timer instead of tapping it in. If it hears a name but no time, the
+// wizard opens at "How long?" with that name. Loaded on demand, like everything about it.
+const ListenSheet = defineAsyncComponent(() => import('./components/ListenSheet.vue'))
+const micOpen = ref(false)
+const heardName = ref<string>()
+
+function openMic() {
+  void play('beep', true)
+  micOpen.value = true
+}
+
+function askHowLong(name: string, prep: boolean) {
+  micOpen.value = false
+  heardName.value = name
+  sheet.value = prep ? 'prep' : 'start'
+}
 
 // Rarely opened, and it brings a QR encoder with it: load it on demand.
 const QrSheet = defineAsyncComponent(() => import('./components/QrSheet.vue'))
@@ -67,6 +85,7 @@ function openAlerts(id: string) {
 
 function openSheet(mode: 'start' | 'prep' = 'start') {
   void play('beep', true)
+  heardName.value = undefined
   sheet.value = mode
 }
 
@@ -131,6 +150,7 @@ function onKey(e: KeyboardEvent) {
     (e.key === 'n' || e.key === 'p') &&
     !typing &&
     !sheet.value &&
+    !micOpen.value &&
     !alertsFor.value &&
     !syncOpen.value &&
     !settingsOpen.value &&
@@ -198,12 +218,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <div v-if="!state.timers.length" class="welcome">
           <SizzleLogo class="logo" />
           <h1>Sizzle</h1>
-          <button class="new" @click="openSheet('start')">
-            <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
-              <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
-            </svg>
-            New timer
-          </button>
+          <div class="start-row">
+            <button class="new" @click="openSheet('start')">
+              <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+              </svg>
+              New timer
+            </button>
+            <button class="mic" aria-label="Say a timer" @click="openMic"><MicIcon /></button>
+          </div>
           <button class="prep" @click="openSheet('prep')">Prep a timer</button>
           <p class="prep-note">Set timers up now, start each one when it's time.</p>
         </div>
@@ -252,6 +275,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           Quick
         </button>
         <button v-else class="prep" aria-label="Prep a timer" @click="openSheet('prep')">Prep</button>
+        <button class="mic" aria-label="Say a timer" @click="openMic"><MicIcon /></button>
       </div>
     </Transition>
 
@@ -288,7 +312,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </Transition>
 
     <SyncSheet v-if="syncOpen && canSync" @close="syncOpen = false" />
-    <NewTimerSheet v-else-if="sheet" :prep="sheet === 'prep'" @close="sheet = null" />
+    <ListenSheet v-else-if="micOpen" @close="micOpen = false" @time="askHowLong" />
+    <NewTimerSheet v-else-if="sheet" :prep="sheet === 'prep'" :heard="heardName" @close="sheet = null" />
     <AlertSheet v-else-if="alertsFor" :key="alertsFor.id" :timer="alertsFor" @close="alertsForId = null" />
     <SettingsSheet v-if="settingsOpen" @close="settingsOpen = false" @qr="((settingsOpen = false), (qrOpen = true))" />
     <QrSheet v-if="qrOpen" @close="qrOpen = false" />
@@ -388,8 +413,34 @@ h1 {
   letter-spacing: -0.03em;
 }
 
+.start-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  max-width: 394px; /* New timer at its 320, plus the mic */
+}
+
 .welcome .new {
   max-width: 320px;
+}
+
+/* A third way to start a timer: round, and quieter than New timer. */
+.mic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 70%, var(--bg));
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  color: var(--accent-text);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+  pointer-events: auto;
+}
+
+.mic:active {
+  transform: scale(0.94);
 }
 
 /* Secondary everywhere it appears: outlined in the prep colour, never filled. */
@@ -480,8 +531,8 @@ h1 {
   flex: 1;
 }
 
-/* Very narrow phones: keep both dock labels on one line. */
-@media (max-width: 350px) {
+/* Phones: keep the dock's labels on one line beside the mic ("Prep another" is the long one). */
+@media (max-width: 400px) {
   .dock {
     gap: 8px;
     padding-left: 12px;
@@ -501,6 +552,24 @@ h1 {
   }
   .dock .prep.as-new {
     padding: 0 16px 0 12px;
+  }
+}
+
+/* Very narrow phones */
+@media (max-width: 350px) {
+  .dock .new {
+    font-size: 1rem;
+  }
+  .dock .new.as-prep svg {
+    display: none; /* "Prep another" needs the room more than its plus */
+  }
+  .dock .prep,
+  .dock .prep.as-new {
+    padding: 0 12px;
+  }
+  .dock .mic {
+    width: 56px;
+    height: 56px;
   }
 }
 

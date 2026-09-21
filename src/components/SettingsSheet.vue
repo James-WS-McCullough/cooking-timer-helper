@@ -55,6 +55,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <small>Show a QR code for Sizzle</small>
         </span>
       </button>
+
+      <!-- Touch devices only (see the media query): a desktop tab keeps sounding in the background. -->
+      <p class="note">Keep Sizzle open while you cook. Alarms can't sound once the screen locks.</p>
     </div>
   </div>
 </template>
@@ -140,6 +143,21 @@ h2 {
 .label small {
   color: var(--text-dim);
   font-size: 0.85rem;
+}
+
+.note {
+  display: none;
+  margin: 6px 6px 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  text-align: center;
+  text-wrap: balance;
+}
+
+@media (pointer: coarse) {
+  .note {
+    display: block;
+  }
 }
 
 @keyframes fade {

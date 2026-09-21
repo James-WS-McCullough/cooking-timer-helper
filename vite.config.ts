@@ -1,4 +1,4 @@
-import { copyFileSync, createReadStream, existsSync, mkdirSync, statSync } from 'node:fs'
+import { copyFileSync, createReadStream, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import vue from '@vitejs/plugin-vue'
 import Icons from 'unplugin-icons/vite'
@@ -16,31 +16,48 @@ const VOICE_FILES: Record<string, string> = {
   'piper_phonemize.wasm': 'node_modules/@diffusionstudio/piper-wasm/build/piper_phonemize.wasm',
   'piper_phonemize.data': 'node_modules/@diffusionstudio/piper-wasm/build/piper_phonemize.data',
 }
+// The mic's speech model runs on transformers.js, which wants its own (newer) build of the
+// same runtime. Served from /listen/ in the same way, and only fetched once the mic is used.
+const ORT_FOR_LISTEN = 'node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist'
+const LISTEN_FILES: Record<string, string> = {
+  'ort-wasm-simd-threaded.mjs': `${ORT_FOR_LISTEN}/ort-wasm-simd-threaded.mjs`,
+  'ort-wasm-simd-threaded.wasm': `${ORT_FOR_LISTEN}/ort-wasm-simd-threaded.wasm`,
+}
+const HOSTED: Record<string, Record<string, string>> = { voice: VOICE_FILES, listen: LISTEN_FILES }
 const VOICE_TYPES: Record<string, string> = {
   mjs: 'text/javascript',
   wasm: 'application/wasm',
   data: 'application/octet-stream',
 }
 
-function voiceAssets(): Plugin {
+function hostedAssets(): Plugin {
   let outDir = 'dist'
   return {
-    name: 'sizzle-voice-assets',
+    name: 'sizzle-hosted-assets',
     configResolved(config) {
       outDir = resolve(config.root, config.build.outDir)
     },
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        const file = VOICE_FILES[(req.url ?? '').split('?')[0].replace(/^.*\/voice\//, '')]
-        if (!req.url?.includes('/voice/') || !file || !existsSync(file)) return next()
+        const [, dir, name] = /\/(voice|listen)\/([^/?]+)/.exec(req.url ?? '') ?? []
+        const file = dir && name ? HOSTED[dir]?.[name] : undefined
+        if (!file || !existsSync(file)) return next()
         res.setHeader('Content-Type', VOICE_TYPES[file.split('.').at(-1) ?? ''] ?? 'application/octet-stream')
         res.setHeader('Content-Length', statSync(file).size)
         createReadStream(file).pipe(res)
       })
     },
     closeBundle() {
-      mkdirSync(resolve(outDir, 'voice'), { recursive: true })
-      for (const [name, from] of Object.entries(VOICE_FILES)) copyFileSync(from, resolve(outDir, 'voice', name))
+      for (const [dir, files] of Object.entries(HOSTED)) {
+        mkdirSync(resolve(outDir, dir), { recursive: true })
+        for (const [name, from] of Object.entries(files)) copyFileSync(from, resolve(outDir, dir, name))
+      }
+      // The speech worker's bundle drags in every build of its runtime (41 MB) by URL reference.
+      // It's pointed at /listen/ instead, so these copies would only bloat the deploy.
+      const assets = resolve(outDir, 'assets')
+      for (const name of existsSync(assets) ? readdirSync(assets) : []) {
+        if (/^ort-wasm-.*\.wasm$/.test(name)) rmSync(resolve(assets, name))
+      }
     },
   }
 }
@@ -48,7 +65,7 @@ function voiceAssets(): Plugin {
 export default defineConfig({
   plugins: [
     vue(),
-    voiceAssets(),
+    hostedAssets(),
     Icons({ compiler: 'vue3' }),
     VitePWA({
       // 'prompt': a new version waits for the cook to press Reload (src/components/UpdateToast.vue).
@@ -56,10 +73,12 @@ export default defineConfig({
       // Sounds must work offline too.
       workbox: {
         globPatterns: ['**/*.{js,css,html,mp3}'],
-        // The voice runtime (33 MB) is only fetched if the voice is turned on; keep it after that.
+        globIgnores: ['**/transcriber.worker-*.js'], // half a megabyte that only mic users need
+        // The voice runtime (33 MB) is only fetched if the voice is turned on, and the mic's
+        // (14 MB) if the mic is used; keep them after that.
         runtimeCaching: [
           {
-            urlPattern: ({ url }) => url.pathname.includes('/voice/'),
+            urlPattern: ({ url }) => /\/voice\/|\/listen\/|\/transcriber\.worker-/.test(url.pathname),
             handler: 'CacheFirst',
             options: { cacheName: 'sizzle-voice-runtime', expiration: { maxEntries: 8 } },
           },
@@ -83,6 +102,8 @@ export default defineConfig({
       },
     }),
   ],
+  // The mic's speech worker imports transformers.js, which splits into chunks: that needs ES output.
+  worker: { format: 'es' },
   // The voice lab's Piper package starts its own web worker; pre-bundling breaks the worker's URL.
   optimizeDeps: { exclude: ['@mintplex-labs/piper-tts-web'] },
   test: {

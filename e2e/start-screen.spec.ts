@@ -60,6 +60,7 @@ test('while timers run, a gear opens the same utilities: voice, theme and QR', a
   await gear.click()
   const settings = page.getByRole('dialog', { name: 'Settings' })
   await expect(settings.getByRole('switch', { name: /Sizzle's voice/ })).toHaveAttribute('aria-checked', 'false')
+  await expect(settings.getByText(/Keep Sizzle open/)).toBeVisible() // a phone: it can't sound once locked
 
   await settings.getByRole('button', { name: /Switch to dark mode/ }).click()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
@@ -96,4 +97,16 @@ test('the QR button shows a code for this site under the logo', async ({ page })
   await expect(panel.getByRole('img', { name: /QR code for http:\/\/localhost/ })).toBeVisible()
   await panel.getByRole('button', { name: 'Close' }).click()
   await expect(panel).toBeHidden()
+})
+
+test.describe('with a mouse', () => {
+  test.use({ isMobile: false, hasTouch: false })
+
+  test("Settings doesn't ask a desktop to keep Sizzle open", async ({ page }) => {
+    await startTimer(page, 'Rice', 10)
+    await page.getByRole('button', { name: 'Settings' }).click()
+    const settings = page.getByRole('dialog', { name: 'Settings' })
+    await expect(settings.getByRole('button', { name: /Open on another device/ })).toBeVisible()
+    await expect(settings.getByText(/Keep Sizzle open/)).toBeHidden()
+  })
 })

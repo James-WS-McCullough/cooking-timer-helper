@@ -58,19 +58,32 @@ function buffer(c: AudioContext, name: Sfx): Promise<AudioBuffer> {
   return loading
 }
 
-/** Call from a user gesture. Safe (and cheap) to call on every tap. */
-export function unlock(): void {
-  const c = context()
-  if (!c) return
-  // iOS: without this, Web Audio obeys the ringer switch and a silenced phone stays silent.
+// iOS: without 'playback', Web Audio obeys the ringer switch and a silenced phone stays
+// silent. The mic (src/lib/listen/) needs 'play-and-record' for as long as it's recording.
+type SessionType = 'playback' | 'play-and-record'
+let sessionType: SessionType = 'playback'
+
+function applySession(): void {
   const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession
-  if (session && session.type !== 'playback') {
+  if (session && session.type !== sessionType) {
     try {
-      session.type = 'playback'
+      session.type = sessionType
     } catch {
       /* older Safari */
     }
   }
+}
+
+export function setAudioSession(type: SessionType): void {
+  sessionType = type
+  applySession()
+}
+
+/** Call from a user gesture. Safe (and cheap) to call on every tap. */
+export function unlock(): void {
+  const c = context()
+  if (!c) return
+  applySession()
   if (c.state !== 'running') {
     c.resume().then(
       () => (soundReady.value = c.state === 'running'),

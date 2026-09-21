@@ -1,7 +1,7 @@
 // Alba, a Piper voice (en_GB, CC BY 4.0, University of Edinburgh CSTR), running
 // entirely in the browser. Nothing here loads until the cook turns the voice on:
 // the library is a lazy chunk, its runtime (ONNX + the eSpeak NG phonemiser, ~33 MB)
-// is served by Sizzle itself from /voice/ (see voiceAssets in vite.config.ts), and
+// is served by Sizzle itself from /voice/ (see hostedAssets in vite.config.ts), and
 // the model (~63 MB) downloads once into the browser's private file system.
 
 type Piper = typeof import('@mintplex-labs/piper-tts-web')

@@ -11,7 +11,8 @@ import TimeStep from './sheet/TimeStep.vue'
 // Making a timer (name → time). With `prep`, it's built now and started later, in its own colour.
 // Alerts are deliberately not part of making a timer: starting one should take two taps.
 // (They're added from the bell on a timer's card: AlertSheet.vue.)
-const props = defineProps<{ prep?: boolean }>()
+// `heard`: a name that came from the mic without a time; the wizard opens at "How long?" for it.
+const props = defineProps<{ prep?: boolean; heard?: string }>()
 const emit = defineEmits<{ close: [] }>()
 
 // One decision per screen, and most taps move forward on their own.
@@ -21,9 +22,10 @@ const TITLES: Record<(typeof STEPS)[number], string> = {
   time: 'How long?',
 }
 const { step, direction, go, back } = useSteps(STEPS)
+if (props.heard) step.value = 'time'
 
 // ---- Name ----
-const name = ref('')
+const name = ref(props.heard ?? '')
 const searching = ref(false)
 // The search box can still be focused while the name step slides away (a quick tap
 // on it just after picking a chip). Search mode belongs to that step only, so drop

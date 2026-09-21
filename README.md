@@ -22,8 +22,8 @@ An installed copy doesn't update silently: when a new version has been deployed,
 
 ## Testing
 
-- **Unit tests** (Vitest, `src/**/*.test.ts`) cover the timer engine, Sync Finish maths, Pause all, food search and icons, name tidying, time history and saved-data migrations.
-- **End-to-end tests** (Playwright, `e2e/`) drive the production build at phone size in the Chrome that's already installed, so there is no browser download: the wizard, search, presets, the bell, finishing and its sounds, remove confirmation, prepping, Sync Finish, Pause all, theme and QR. They're headless and print dots; add `-- --ui` to watch, or `E2E_VERBOSE=1` for console output. Kitchen time is fast-forwarded with Playwright's clock (`e2e/helpers.ts`).
+- **Unit tests** (Vitest, `src/**/*.test.ts`) cover the timer engine, Sync Finish maths, Pause all, food search and icons, name tidying, spoken-timer parsing, mic audio handling (resampling, end of speech, trimming), time history and saved-data migrations.
+- **End-to-end tests** (Playwright, `e2e/`) drive the production build at phone size in the Chrome that's already installed, so there is no browser download: the wizard, search, presets, the bell, finishing and its sounds, remove confirmation, prepping, Sync Finish, Pause all, theme and QR, and the mic (with Chrome's pretend microphone and a stand-in for the speech worker, so no model is downloaded). They're headless and print dots; add `-- --ui` to watch, or `E2E_VERBOSE=1` for console output. Kitchen time is fast-forwarded with Playwright's clock (`e2e/helpers.ts`).
 - **Biome** lints and formats everything (`biome.json`); `.vscode/` points the editor at it for format-on-save.
 
 ## On a phone
@@ -90,7 +90,7 @@ Food icons are [Fluent Emoji](https://github.com/microsoft/fluentui-emoji) (flat
 - `src/lib/history.ts`, `src/lib/theme.ts` – last-used times per name; light/dark
 - `src/data/foods.ts` – the searchable food list
 - `src/lib/foodIcons.ts`, `src/lib/foodSearch.ts` – name → icon matching and list search, both with tests
-- `src/components/` – `TimerCard.vue` (one timer, in any state); `NewTimerSheet.vue` (the name → time wizard) and `AlertSheet.vue` (the bell's alert editor), both built from `sheet/` (`SheetShell.vue` is the shared bottom sheet, one component per step, shared styles in `sheet.css`); `SyncSheet.vue`; `QrSheet.vue` (loaded on demand); `UpdateToast.vue`; `FoodIcon.vue`; `SizzleLogo.vue`
+- `src/components/` – `TimerCard.vue` (one timer, in any state); `NewTimerSheet.vue` (the name → time wizard) and `AlertSheet.vue` (the bell's alert editor), both built from `sheet/` (`SheetShell.vue` is the shared bottom sheet, one component per step, shared styles in `sheet.css`); `SyncSheet.vue`; `QrSheet.vue` and `ListenSheet.vue` (the mic; both loaded on demand); `UpdateToast.vue`; `FoodIcon.vue`; `SizzleLogo.vue`
 
 ## Sizzle's voice
 
@@ -101,6 +101,15 @@ Sizzle is also a character: a small round robot in a chef's hat, bottom-left of 
 - **Her face** (`src/components/RobotFace.vue`): the mouth is a row of segments that light from the centre outwards with her voice, coming on at once and fading over a third of a second; her eyes look around, settle on you when she speaks, blink and breathe a slow glow. All of it stops under reduced motion except the mouth.
 - **What enabling downloads (once, about 95 MB):** Alba's model (63 MB, from Hugging Face, kept in the browser's private storage) and the runtime (ONNX Runtime + the eSpeak NG phonemiser, 33 MB). The runtime is **hosted by Sizzle itself** at `/voice/`: `vite.config.ts` serves it from `node_modules` in dev and copies it into `dist/voice/` at build, so it's version-pinned by the lockfile, never committed, and cached by the service worker on first use. Nothing voice-related loads until she's turned on.
 - `npm run lab` opens a dev-only playground (`lab/voice/`) for the voice and face: type anything, change pitch and speed while she loops.
+
+## Saying a timer
+
+The round mic button beside New timer (start screen and dock) makes a timer from speech: "rice, 10 minutes", "turkey, two hours thirty", "prepare the lamb, an hour and a half".
+
+- **The rule** (`src/lib/spoken.ts`, pure and unit-tested against real transcripts): a number is minutes unless hours (or seconds) are said; "prep" or "prepare" anywhere makes it a prepped timer, otherwise it starts; the remaining words are the name, snapped to the food list only when they clearly are one of its entries (exact, singular/plural, or one letter out: "rise" → Rice), otherwise kept as the cook's own name.
+- **Nothing is started unseen.** The sheet shows what it understood ("Rice · 10:00", and the words it heard) with one big Start; a wrong guess costs a tap on Try again. A name with no time carries on in the wizard at "How long?"; nothing usable says so.
+- **The speech model** is [Moonshine](https://github.com/moonshine-ai/moonshine) tiny (MIT, made for short commands), run **on the device** by [transformers.js](https://github.com/huggingface/transformers.js) in a web worker: what the cook says never leaves the phone. `src/lib/listen/`: `recorder.ts` (mic → 16 kHz through an AudioWorklet; on iOS the audio session switches to play-and-record only while recording), `capture.ts` (resampling, end-of-speech detection that measures the room first, and trimming to the voice, all pure and tested: the model returns nothing for a clip that opens with a second of silence), `transcriber.worker.ts` + `moonshine.ts` (the model), `index.ts` (state).
+- **What first use downloads (once, about 65 MB):** the model (51 MB, from Hugging Face, kept in the browser's cache) and its ONNX runtime (14 MB), hosted by Sizzle at `/listen/` the same way as the voice's. The mic says so before fetching anything, and nothing of it loads until then.
 
 ## Licence and credits
 
@@ -122,9 +131,11 @@ Sizzle's robot voice turns text into phonemes with **[eSpeak NG](https://github.
 | WebAssembly build of the two above (`@diffusionstudio/piper-wasm@1.0.0`, the exact files shipped) | as above | https://www.npmjs.com/package/@diffusionstudio/piper-wasm/v/1.0.0 |
 | Piper browser runtime (`@mintplex-labs/piper-tts-web`) | MIT | https://github.com/Mintplex-Labs/piper-tts-web |
 | ONNX Runtime Web | MIT | https://github.com/microsoft/onnxruntime |
+| transformers.js (runs the mic's speech model) | Apache-2.0 | https://github.com/huggingface/transformers.js |
 
 ### Not covered by the GPL, and used under their own terms
 
 - **Alba**, the voice itself, is a Piper model trained on the University of Edinburgh CSTR *Alba* dataset: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Credit: CSTR, University of Edinburgh; model by the Piper project.
+- **Moonshine tiny**, the mic's speech-to-text model (downloaded on first use, not shipped in the repo): MIT, by Useful Sensors / Moonshine AI; ONNX conversion by the transformers.js community.
 - **Sound effects** (`public/*.mp3`) are from [ZapSplat](https://www.zapsplat.com), used under the project owner's paid ZapSplat account. That licence is personal to the account holder: the files are *not* GPL-licensed and may not be reused or redistributed from here. If you reuse this project, replace them with sounds you have the rights to (any four mp3s with the same names work).
 - **Food icons** are [Fluent Emoji](https://github.com/microsoft/fluentui-emoji) © Microsoft, MIT (GPL-compatible).

@@ -1,6 +1,7 @@
 import type { FoodEntry } from '../data/foods'
 
-const normalise = (text: string) =>
+/** Lowercase, unaccented, punctuation-free: how names are compared. */
+export const normalise = (text: string) =>
   text
     .toLowerCase()
     .normalize('NFD')
