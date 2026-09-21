@@ -48,13 +48,60 @@ const UNITS: Record<string, number> = {
 }
 
 // "crep" is what the speech model makes of a clipped "prep"; it isn't a word, so it's safe to take.
-const PREP = new Set(['prep', 'prepare', 'prepared', 'prepping', 'preps', 'crep'])
-// Not part of a name when they're left dangling at either end of it ("start the rice for").
+const PREP = new Set(['prep', 'prepare', 'prepared', 'prepped', 'prepping', 'preps', 'crep'])
+
+// The sentence people wrap round the food: "can you start a timer for this pork", "remind me
+// about the bread", "the laksa needs", "he wants his steak". Stripped from either end of the
+// name only, so "Toad in the hole" and "Bacon and eggs" keep their middles, and never past
+// the point where what's left is a food-list entry ("Oven chips" keeps its oven).
 const EDGE_FILLER = new Set(
-  'a an and at begin er erm for in of on please set start the timer timers to uh um with'
+  [
+    'a an and at for in of on the to with about when if so or by off up down out',
+    'this that these those my our your his her their some it its',
+    'i im ive id ill we were you he she they me us him them',
+    'can could would will should shall may might must',
+    'like need needs want wants take takes have has had get gets got give gives put putting do does',
+    'let lets make create add tell remind know count time is are be been was go goes going went',
+    'begin set start starting timer timers alarm countdown now then again',
+    'please thanks thank cheers hey hi ok okay right sizzle er erm uh um',
+  ]
+    .join(' ')
     .split(' ')
     .concat(Object.keys(UNITS)),
 )
+// "The gazpacho needs chilling": once the food has been named, one of these ends it.
+const AFTER_THE_FOOD = new Set('need needs want wants take takes is are has have had goes should will'.split(' '))
+
+// "in the oven", "on the hob", "under the grill": where it's cooking isn't what it's called.
+// Only with the preposition, so the list's "Oven chips" and "Air fryer" are safe.
+const PLACED = new Set(['in', 'into', 'on', 'onto', 'under', 'for'])
+const DETERMINERS = new Set(['the', 'a', 'an', 'my', 'our', 'this', 'that'])
+const APPLIANCES = [
+  'air fryer',
+  'slow cooker',
+  'pressure cooker',
+  'frying pan',
+  'oven',
+  'hob',
+  'stove',
+  'grill',
+  'pan',
+  'pot',
+  'wok',
+  'fryer',
+  'microwave',
+  'steamer',
+  'toaster',
+  'barbecue',
+  'bbq',
+  'water',
+].map((name) => name.split(' '))
+
+// "about 20 minutes", "another ten minutes" / "20 minutes or so", "10 minutes more"
+const BEFORE_A_TIME = new Set(
+  'about around roughly approximately approx another maybe just nearly almost exactly say'.split(' '),
+)
+const AFTER_A_TIME = new Set('more extra longer ish'.split(' '))
 const MAX_MS = 24 * HOUR
 
 interface Read {
@@ -78,8 +125,11 @@ function readNumber(t: string[], i: number): Read | null {
   let next = i + 1
   if (value < 0 && (word === 'a' || word === 'an') && t[next] === 'hundred') value = 1
   if (value < 0) {
+    // "to our thirty" is "two hours thirty", but "for our turkey" is just a sentence.
     const guess = SOUNDS_LIKE[word]
-    return guess !== undefined && t[next] !== undefined && t[next] in UNITS ? { value: guess, next } : null
+    const unit = t[next]
+    if (guess === undefined || unit === undefined || !(unit in UNITS)) return null
+    return (unit === 'our' || unit === 'ours') && guess !== 2 ? null : { value: guess, next }
   }
   if (t[next] === 'hundred') {
     value *= 100
@@ -98,7 +148,7 @@ interface Found {
   sure: boolean
 }
 
-const isArticle = (word: string | undefined) => word === 'a' || word === 'an'
+const isArticle = (word: string | undefined) => word === 'a' || word === 'an' || word === 'another'
 const unitAt = (t: string[], i: number): number | undefined => (t[i] !== undefined ? UNITS[t[i]] : undefined)
 
 /** A spoken duration starting exactly at token i, or null. */
@@ -123,9 +173,14 @@ function readDuration(t: string[], i: number): Found | null {
     if (unit === HOUR) return { start: i, end: j + 1, ms: fraction * unit, sure: true }
   }
 
-  // "an hour", "2 hours", "six and a half minutes", "ninety seconds", "35"
+  // "an hour", "2 hours", "six and a half minutes", "ninety seconds", "a couple of minutes", "35"
   let amount: number
-  if (isArticle(t[i]) && unitAt(t, i + 1)) {
+  const couple = isArticle(t[i]) ? i + 1 : i
+  const coupleOf = t[couple + 1] === 'of' ? couple + 2 : couple + 1
+  if (t[couple] === 'couple' && unitAt(t, coupleOf)) {
+    amount = 2
+    j = coupleOf
+  } else if (isArticle(t[i]) && unitAt(t, i + 1)) {
     amount = 1
     j = i + 1
   } else {
@@ -139,6 +194,7 @@ function readDuration(t: string[], i: number): Found | null {
     amount += 0.5
     j += 3
   }
+  if (AFTER_A_TIME.has(t[j] ?? '') && unitAt(t, j + 1)) j++ // "ten more minutes"
   const unit = unitAt(t, j)
   if (!unit) return { start: i, end: j, ms: amount * MINUTE, sure: false }
   j++
@@ -200,12 +256,47 @@ function oneLetterApart(a: string, b: string): boolean {
  * one such candidate ("rise" → Rice). Anything looser would rename a cook's own dish.
  */
 function matchFood(spoken: string, foods: readonly FoodEntry[]): string | undefined {
-  const names = foods.map(([name]) => ({ name, key: normalise(name) }))
-  const exact = names.find((f) => f.key === spoken) ?? names.find((f) => singular(f.key) === singular(spoken))
-  if (exact) return exact.name
-  if (spoken.length < 4) return undefined
-  const near = names.filter((f) => f.key[0] === spoken[0] && oneLetterApart(f.key, spoken))
-  return near.length === 1 ? near[0].name : undefined
+  const listed = listedFood(spoken, foods)
+  if (listed || spoken.length < 4) return listed
+  const near = foods.filter(([name]) => normalise(name)[0] === spoken[0] && oneLetterApart(normalise(name), spoken))
+  return near.length === 1 ? near[0]?.[0] : undefined
+}
+
+/** The entry with exactly this name, give or take a plural. */
+function listedFood(spoken: string, foods: readonly FoodEntry[]): string | undefined {
+  if (!spoken) return undefined
+  const exact = foods.find(([name]) => normalise(name) === spoken)
+  return (exact ?? foods.find(([name]) => singular(normalise(name)) === singular(spoken)))?.[0]
+}
+
+/** Without "in the oven", "on the hob", "under the grill". */
+function dropPlaces(t: string[]): string[] {
+  const out: string[] = []
+  for (let i = 0; i < t.length; i++) {
+    if (PLACED.has(t[i] ?? '')) {
+      const at = DETERMINERS.has(t[i + 1] ?? '') ? i + 2 : i + 1
+      const appliance = APPLIANCES.find((words) => words.every((w, k) => t[at + k] === w))
+      if (appliance) {
+        i = at + appliance.length - 1
+        continue
+      }
+    }
+    out.push(t[i] ?? '')
+  }
+  return out
+}
+
+/** What's left once the sentence round the food is taken away. Stops as soon as it's looking at a food-list entry. */
+function foodWords(t: string[], foods: readonly FoodEntry[]): string {
+  let from = 0
+  let to = t.length
+  const listed = () => listedFood(t.slice(from, to).join(' '), foods) !== undefined
+  while (from < to && !listed() && EDGE_FILLER.has(t[to - 1] ?? '')) to--
+  while (from < to && !listed() && EDGE_FILLER.has(t[from] ?? '')) from++
+  // "gazpacho needs chilling": the food has been named; the rest is about it
+  const verb = t.slice(from, to).findIndex((w, i) => i > 0 && AFTER_THE_FOOD.has(w))
+  if (verb > 0 && !listed()) to = from + verb
+  return t.slice(from, to).join(' ')
 }
 
 export function parseSpoken(text: string, foods: readonly FoodEntry[] = FOODS): Spoken {
@@ -221,13 +312,16 @@ export function parseSpoken(text: string, foods: readonly FoodEntry[] = FOODS): 
   tokens = tokens.filter((w) => !PREP.has(w))
 
   const found = findDuration(tokens)
-  if (found) tokens.splice(found.start, found.end - found.start)
+  if (found) {
+    let { start, end } = found
+    while (start > 0 && BEFORE_A_TIME.has(tokens[start - 1] ?? '')) start--
+    if (tokens[end] === 'or' && tokens[end + 1] === 'so') end += 2
+    while (AFTER_A_TIME.has(tokens[end] ?? '')) end++
+    tokens.splice(start, end - start)
+  }
   const ms = found ? Math.round(found.ms / 1000) * 1000 : 0
 
-  while (tokens.length && EDGE_FILLER.has(tokens[0])) tokens.shift()
-  while (tokens.length && EDGE_FILLER.has(tokens[tokens.length - 1])) tokens.pop()
-  const said = tokens.join(' ')
-
+  const said = foodWords(dropPlaces(tokens), foods)
   return {
     name: matchFood(said, foods) ?? tidyName(said),
     durationMs: ms > 0 && ms <= MAX_MS ? ms : null,

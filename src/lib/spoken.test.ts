@@ -39,6 +39,49 @@ describe('parseSpoken', () => {
     expect(heard('Start the rice for 10 minutes please')).toEqual(['Rice', 10, false])
   })
 
+  it('finds the food and the time inside a whole sentence, in either order', () => {
+    expect(heard('Start a timer for this pork, for 20 minutes')).toEqual(['Pork', 20, false])
+    expect(heard('Set a 20 minute timer for the pork')).toEqual(['Pork', 20, false])
+    expect(heard('Can you time my chicken thighs for thirty five minutes please')).toEqual([
+      'Chicken thighs',
+      35,
+      false,
+    ])
+    expect(heard('I need an hour and a half for the lamb')).toEqual(['Lamb', 90, false])
+    expect(heard('Give the rice ten minutes')).toEqual(['Rice', 10, false])
+    expect(heard('Put the potatoes on for 45 minutes')).toEqual(['Potatoes', 45, false])
+    expect(heard('Prepare a timer for those roast potatoes, 45 minutes')).toEqual(['Roast potatoes', 45, true])
+    expect(heard('toad in the hole 25 minutes')).toEqual(['Toad in the hole', 25, false]) // middles are kept
+  })
+
+  it("keeps a dish's own small words, and drops where it's cooking", () => {
+    expect(heard('Pigs in blankets 25 minutes')).toEqual(['Pigs in blankets', 25, false])
+    expect(heard('mac and cheese for 20')).toEqual(['Mac and cheese', 20, false])
+    expect(heard('Devils on horseback, twelve minutes')).toEqual(['Devils on horseback', 12, false])
+    expect(heard('Put the cheese on toast under the grill for 3 minutes')).toEqual(['Cheese on toast', 3, false])
+    expect(heard('I want to prep my five spice chicken for the oven, 40 minutes')).toEqual([
+      'Five spice chicken',
+      40,
+      true,
+    ])
+    expect(heard('two hour slow roast lamb shoulder timer')).toEqual(['Slow roast lamb shoulder', 120, false])
+    expect(heard('rest the steak for 5 minutes')).toEqual(['Rest the steak', 5, false]) // a task is a fine name
+  })
+
+  it('takes a long, rambling request', () => {
+    expect(
+      heard(
+        'Hey Sizzle, can you please set me a timer for, um, the roast chicken, for about an hour and twenty minutes, thanks',
+      ),
+    ).toEqual(['Roast chicken', 80, false])
+    expect(heard('the pork wants another twenty')).toEqual(['Pork', 20, false])
+    expect(heard('twenty more on the pork')).toEqual(['Pork', 20, false])
+    expect(heard('stock needs to simmer for 3 hours')).toEqual(['Stock', 180, false])
+    expect(heard('Set a timer for our turkey, three hours')).toEqual(['Turkey', 180, false]) // "for our" is not 4 hours
+    expect(heard('give it ten minutes')).toEqual(['', 10, false])
+    expect(heard('Set a timer')).toEqual(['', null, false])
+  })
+
   it('copes with what a speech model really writes', () => {
     expect(heard('Turkey to our thirty.')).toEqual(['Turkey', 150, false]) // "two hours thirty"
     expect(heard('Past eight.')).toEqual(['Pasta', 8, false])
@@ -49,7 +92,9 @@ describe('parseSpoken', () => {
 
   it("keeps a cook's own name, only tidied", () => {
     expect(heard("grandma's pie 40")).toEqual(['Grandmas pie', 40, false])
-    expect(heard('Time and Garlic Bread Fifteen.')).toEqual(['Time and garlic bread', 15, false])
+    expect(heard('cheesy garlic bread fifteen')).toEqual(['Cheesy garlic bread', 15, false])
+    // "Thyme" is always heard as "time", which at the front of a name is sentence, not food.
+    expect(heard('Time and Garlic Bread Fifteen.')).toEqual(['Garlic bread', 15, false])
     expect(heard('bake 25')).toEqual(['Bake', 25, false]) // one letter from Cake, but not the same first letter
   })
 
