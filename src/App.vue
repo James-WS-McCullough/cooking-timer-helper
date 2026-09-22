@@ -5,6 +5,7 @@ import MicIcon from './components/MicIcon.vue'
 import NewTimerSheet from './components/NewTimerSheet.vue'
 import NextStepSheet from './components/NextStepSheet.vue'
 import NoteCard from './components/NoteCard.vue'
+import RecipeSheet from './components/RecipeSheet.vue'
 import SaveRecipeSheet from './components/SaveRecipeSheet.vue'
 import SettingsSheet from './components/SettingsSheet.vue'
 import SizzleLogo from './components/SizzleLogo.vue'
@@ -19,7 +20,7 @@ import { dialogOpen } from './lib/dialog'
 import { isNote } from './lib/recipe'
 import { theme, toggleTheme } from './lib/theme'
 import { anyPausedByAll, countingTimers, displayOrder, isPending, statusOf, syncable } from './lib/timer'
-import { arrivals, chainEnd, justFinished, pauseEverything, resumeEverything, state } from './store'
+import { arrivals, chainEnd, justFinished, pauseEverything, resumeEverything, type StepTarget, state } from './store'
 
 // Which wizard is open, if any: start a timer now, or prep one for later.
 const sheet = ref<'start' | 'prep' | null>(null)
@@ -27,13 +28,25 @@ const sheet = ref<'start' | 'prep' | null>(null)
 // The list: timers, and the instruction cards of recipes in progress.
 const cards = computed(() => [...state.timers, ...state.notes])
 
-// "+ Next step" on a card: which card, then (for a timer step) the wizard with `after` set.
-const nextFor = ref<{ id: string; name: string } | null>(null)
-const after = ref<{ id: string; name: string }>()
+// "+ Next step" on a card, or a branch in a recipe's graph: where it goes, then (for a timer
+// step) the wizard with `after` set.
+const nextFor = ref<StepTarget | null>(null)
+const after = ref<StepTarget>()
 function openNext(id: string) {
   void play('beep', true)
   const card = cards.value.find((c) => c.id === id)
-  if (card) nextFor.value = { id, name: chainEnd(card) } // the sheet says what the new step follows
+  if (card) nextFor.value = { kind: 'card', id, name: chainEnd(card) } // the sheet says what the new step follows
+}
+
+// A saved recipe's screen. It stays open behind the step sheets while a branch is added.
+const recipeOpen = ref<string | null>(null)
+const openRecipe = computed(() => state.recipes.find((r) => r.id === recipeOpen.value))
+function branchRecipe(afterIds: string[]) {
+  const recipe = openRecipe.value
+  if (!recipe) return
+  const last = afterIds[0] && recipe.steps.find((s) => s.id === afterIds[0])
+  const name = last ? (last.kind === 'timer' ? last.name : last.text) : ''
+  nextFor.value = { kind: 'recipe', id: recipe.id, after: afterIds, name }
 }
 function nextIsTimer() {
   after.value = nextFor.value ?? undefined
@@ -359,12 +372,22 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
     <SyncSheet v-if="syncOpen && canSync" @close="syncOpen = false" />
     <ListenSheet v-else-if="micOpen" @close="micOpen = false" @time="askHowLong" />
-    <NextStepSheet v-else-if="nextFor" :card-id="nextFor.id" :card-name="nextFor.name" @close="nextFor = null" @timer="nextIsTimer" />
-    <NewTimerSheet v-else-if="sheet" :prep="sheet === 'prep'" :heard="heardName" :after="after" @close="sheet = null" />
+    <NextStepSheet v-else-if="nextFor" :target="nextFor" @close="nextFor = null" @timer="nextIsTimer" />
+    <NewTimerSheet
+      v-else-if="sheet"
+      :prep="sheet === 'prep'"
+      :heard="heardName"
+      :after="after"
+      @close="sheet = null"
+      @recipe="((sheet = null), (recipeOpen = $event.id))"
+    />
+
     <AlertSheet v-else-if="alertsFor" :key="alertsFor.id" :timer="alertsFor" @close="alertsForId = null" />
     <SettingsSheet v-if="settingsOpen" @close="settingsOpen = false" @qr="((settingsOpen = false), (qrOpen = true))" />
     <QrSheet v-if="qrOpen" @close="qrOpen = false" />
     <SaveRecipeSheet v-if="justFinished" :run="justFinished" @close="justFinished = null" />
+    <!-- Sits beneath the step sheets (its own z-index), so adding a branch doesn't lose the servings chosen. -->
+    <RecipeSheet v-if="openRecipe" :recipe="openRecipe" @close="recipeOpen = null" @branch="branchRecipe" />
   </div>
 </template>
 

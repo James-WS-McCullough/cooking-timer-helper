@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { formatClock, parseDuration, tidyName } from '../lib/format'
 import { NO_ALERTS } from '../lib/timer'
-import { addNextStep, type Preset, type Recipe, savePreset, startPreset, startRecipe, startTimer } from '../store'
+import { addStep, type Preset, type Recipe, type StepTarget, savePreset, startPreset, startTimer } from '../store'
 import NameStep from './sheet/NameStep.vue'
 import SheetShell from './sheet/SheetShell.vue'
 import { useSteps } from './sheet/steps'
@@ -13,8 +13,8 @@ import TimeStep from './sheet/TimeStep.vue'
 // (They're added from the bell on a timer's card: AlertSheet.vue.)
 // `heard`: a name that came from the mic without a time; the wizard opens at "How long?" for it.
 // `after`: the timer is the next step of that card's recipe, not a timer of its own.
-const props = defineProps<{ prep?: boolean; heard?: string; after?: { id: string; name: string } }>()
-const emit = defineEmits<{ close: [] }>()
+const props = defineProps<{ prep?: boolean; heard?: string; after?: StepTarget }>()
+const emit = defineEmits<{ close: []; recipe: [recipe: Recipe] }>()
 
 // One decision per screen, and most taps move forward on their own.
 const STEPS = ['name', 'time'] as const
@@ -43,14 +43,13 @@ function pickName(n: string) {
 }
 
 function onPreset(p: Preset) {
-  if (props.after) addNextStep(props.after.id, { kind: 'timer', name: p.name, durationMs: p.durationMs, plan: p.plan })
+  if (props.after) addStep(props.after, { kind: 'timer', name: p.name, durationMs: p.durationMs, plan: p.plan })
   else startPreset(p, props.prep)
   emit('close')
 }
 
 function onRecipe(r: Recipe) {
-  startRecipe(r)
-  emit('close')
+  emit('recipe', r) // App opens the recipe's screen: servings, ingredients, steps, Prep
 }
 
 // ---- Time ----
@@ -65,7 +64,7 @@ const timeProblem = computed(() =>
 function start(ms: number | null) {
   if (ms === null) return
   if (keepAsPreset.value) savePreset(name.value, ms, NO_ALERTS)
-  if (props.after) addNextStep(props.after.id, { kind: 'timer', name: name.value, durationMs: ms, plan: NO_ALERTS })
+  if (props.after) addStep(props.after, { kind: 'timer', name: name.value, durationMs: ms, plan: NO_ALERTS })
   else startTimer(name.value, ms, NO_ALERTS, props.prep)
   emit('close')
 }
@@ -86,7 +85,7 @@ function onSubmit() {
     :step="step"
     :direction="direction"
     :can-go-back="step === 'time'"
-    :badge="after ? `After ${after.name}` : prep ? 'Prep for later' : undefined"
+    :badge="after ? (after.name ? `After ${after.name}` : 'New step') : prep ? 'Prep for later' : undefined"
     :prep="prep"
     :immersive="step === 'name' && searching"
     @back="back"

@@ -3,14 +3,18 @@ import { announce } from './lib/announce'
 import { installAudio, play, soundReady } from './lib/audio'
 import { formatDuration, tidyName } from './lib/format'
 import { rememberTime } from './lib/history'
+import { type Ingredient, plainText } from './lib/ingredients'
 import {
+  addStepAfter,
   appendStep,
   completeStep,
+  forkDelays,
   isNote,
   type Note,
   noteStep,
   type Recipe,
   type Run,
+  removeStep,
   runFinished,
   runRecipe,
   type Step,
@@ -253,6 +257,7 @@ export function completeTimer(id: string): void {
 // ---- Recipes: chains of steps ----
 
 const runById = (id: string) => state.runs.find((r) => r.id === id)
+const recipeById = (id: string) => state.recipes.find((r) => r.id === id)
 
 /** Cards just brought up by a step's Done, and the card each replaces, so the list can put them in its place. */
 export const arrivals = ref<{ id: string; inPlaceOf: string }[]>([])
@@ -272,8 +277,31 @@ function bringUp(run: Run, step: Step, now: number, inPlaceOf: string): void {
     const note: Note = { id: uid(), text: step.text, createdAt: now, step: ref }
     state.notes.push(note)
     arrivals.value.push({ id: note.id, inPlaceOf })
-    announce(step.text)
-    say(step.text, SPEAK_AFTER_SFX_MS, 'urgent')
+    const spoken = plainText(step.text, run.recipe.ingredients ?? [], run.recipe.serves ?? null, run.serves ?? null)
+    announce(spoken)
+    say(spoken, SPEAK_AFTER_SFX_MS, 'urgent')
+  }
+}
+
+/**
+ * Steps that came up together are a fork: the branch with the most cooking ahead goes on
+ * now and the others wait their turn (the same "start in…" as Sync Finish), so the branches
+ * land together. That's what a fork is for: "start both after the prep, but line them up".
+ */
+function alignFork(run: Run, steps: Step[], now: number): void {
+  const timers = steps.filter((s) => s.kind === 'timer')
+  if (timers.length < 2) return
+  const delays = forkDelays(
+    run.recipe,
+    timers.map((s) => s.id),
+  )
+  for (const step of timers) {
+    const delay = delays.get(step.id) ?? 0
+    const timer = state.timers.find((t) => t.step?.runId === run.id && t.step.stepId === step.id)
+    if (!timer || delay <= 0) continue
+    timer.syncedAt = now
+    timer.startAt = now + delay
+    timer.due = false
   }
 }
 
@@ -282,7 +310,9 @@ function stepDone(ref: StepRef, cardId: string): void {
   const run = runById(ref.runId)
   if (!run) return
   const now = Date.now()
-  for (const next of completeStep(run, ref.stepId)) bringUp(run, next, now, cardId)
+  const next = completeStep(run, ref.stepId)
+  for (const step of next) bringUp(run, step, now, cardId)
+  alignFork(run, next, now)
   if (runFinished(run)) {
     state.runs = state.runs.filter((r) => r !== run)
     if (!run.recipe.name && run.recipe.steps.length > 1) justFinished.value = run
@@ -317,19 +347,31 @@ function runFor(card: Timer | Note): Run {
   return run
 }
 
-/** "+ Next step" on a card: the step goes on the end of that card's chain. */
-export function addNextStep(
-  cardId: string,
-  step: { kind: 'note'; text: string } | { kind: 'timer'; name: string; durationMs: number; plan: AlertPlan },
-): void {
-  const card = state.timers.find((t) => t.id === cardId) ?? state.notes.find((n) => n.id === cardId)
-  if (!card) return
-  const run = runFor(card)
-  if (step.kind === 'note') appendStep(run.recipe, noteStep(step.text.trim()))
-  else {
-    appendStep(run.recipe, timerStep(tidyName(step.name), step.durationMs, step.plan))
-    rememberTime(state.history, step.name, step.durationMs)
+/** Where a new step goes: on the end of a card's chain, or after given steps of a saved recipe (a branch). */
+export type StepTarget =
+  | { kind: 'card'; id: string; name: string }
+  | { kind: 'recipe'; id: string; after: string[]; name: string }
+export type NewStep =
+  | { kind: 'note'; text: string }
+  | { kind: 'timer'; name: string; durationMs: number; plan: AlertPlan }
+
+const makeStep = (step: NewStep) =>
+  step.kind === 'note' ? noteStep(step.text.trim()) : timerStep(tidyName(step.name), step.durationMs, step.plan)
+
+/** "+ Next step" on a card, or a branch in a recipe's graph. */
+export function addStep(target: StepTarget, step: NewStep): void {
+  const made = makeStep(step)
+  if (target.kind === 'card') {
+    const card = state.timers.find((t) => t.id === target.id) ?? state.notes.find((n) => n.id === target.id)
+    if (!card) return
+    appendStep(runFor(card).recipe, made)
+  } else {
+    const recipe = recipeById(target.id)
+    if (!recipe) return
+    if (target.after.length) addStepAfter(recipe, made, target.after)
+    else appendStep(recipe, made)
   }
+  if (step.kind === 'timer') rememberTime(state.history, step.name, step.durationMs)
   void play('beep', true)
   tick(true)
 }
@@ -373,16 +415,41 @@ export function removeRecipe(id: string): void {
 }
 
 /** Prep a recipe: its first step(s) come up, the rest follow as each is done. */
-export function startRecipe(recipe: Recipe): void {
-  const run = runRecipe(recipe)
+export function startRecipe(recipe: Recipe, serves: number | null = recipe.serves ?? null): void {
+  const run = runRecipe(recipe, serves)
   state.runs.push(run)
   const now = Date.now()
-  for (const id of run.active) {
-    const step = stepById(run.recipe, id)
-    if (step) bringUp(run, step, now, '')
-  }
+  const first = run.active.map((id) => stepById(run.recipe, id)).filter((s): s is Step => !!s)
+  for (const step of first) bringUp(run, step, now, '')
+  alignFork(run, first, now)
   void play('beep', true)
   tick(true)
+}
+
+// ---- Editing a saved recipe (the recipe screen) ----
+
+export function removeRecipeStep(recipeId: string, stepId: string): void {
+  const recipe = recipeById(recipeId)
+  if (recipe) removeStep(recipe, stepId)
+}
+
+export function setRecipeServes(recipeId: string, serves: number | null): void {
+  const recipe = recipeById(recipeId)
+  if (recipe) recipe.serves = serves
+}
+
+export function setIngredient(recipeId: string, ingredient: Ingredient): void {
+  const recipe = recipeById(recipeId)
+  if (!recipe) return
+  recipe.ingredients ??= []
+  const at = recipe.ingredients.findIndex((i) => i.id === ingredient.id)
+  if (at < 0) recipe.ingredients.push(ingredient)
+  else recipe.ingredients[at] = ingredient
+}
+
+export function removeIngredient(recipeId: string, ingredientId: string): void {
+  const recipe = recipeById(recipeId)
+  if (recipe) recipe.ingredients = (recipe.ingredients ?? []).filter((i) => i.id !== ingredientId)
 }
 
 export const pauseTimer = (id: string) =>

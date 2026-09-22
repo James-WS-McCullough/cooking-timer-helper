@@ -148,7 +148,6 @@ onBeforeUnmount(() => {
       <header class="top">
         <FoodIcon :name="timer.name" class="icon" />
         <h2 class="name">{{ title }}</h2>
-        <span class="note tabular">{{ hint }}</span>
         <button
           class="bell"
           :class="{ set: hasAlerts }"
@@ -166,10 +165,14 @@ onBeforeUnmount(() => {
 
       <div class="main">
         <!-- Changes every second: must never be read aloud on its own. -->
-        <p class="clock tabular" :class="{ long: clock >= 60 * MIN }" role="timer" aria-live="off">
-          <small v-if="waiting">Start in</small>
-          {{ formatClock(clock) }}
-        </p>
+        <div class="reading">
+          <p class="clock tabular" :class="{ long: clock >= 60 * MIN }" role="timer" aria-live="off">
+            <small v-if="waiting">Start in</small>
+            {{ formatClock(clock) }}
+          </p>
+          <!-- Under the clock rather than beside the name: the header has three buttons already. -->
+          <span class="note hint tabular">{{ hint }}</span>
+        </div>
         <!-- Synced and waiting: it will ask when it's time, but it can go on early -->
         <button v-if="waiting" class="ctl early" :aria-label="`Start ${title} now`" @click="resumeTimer(timer.id)">Start now</button>
         <!-- Prepped: nothing to adjust yet, just the way to set it going -->
@@ -260,6 +263,20 @@ onBeforeUnmount(() => {
   flex: none;
   color: var(--text-dim);
   font-weight: 600;
+}
+
+.reading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hint {
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Mid-way alerts live here, not in the wizard. Amber once set, to match the dots on the bar. */

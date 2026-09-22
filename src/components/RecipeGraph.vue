@@ -1,0 +1,187 @@
+<script setup lang="ts">
+// A recipe as a picture: rows of steps, lines showing what waits for what, so a fork and
+// a join are visible at a glance. With a run, done steps dim and the ones up now are lit.
+// Tapping a node offers to add a branch after it, or remove it (the parent decides).
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { formatDuration } from '../lib/format'
+import { layout, type Recipe, type Run, type Step } from '../lib/recipe'
+import FoodIcon from './FoodIcon.vue'
+
+const props = defineProps<{ recipe: Recipe; run?: Run; editable?: boolean }>()
+const emit = defineEmits<{ pick: [step: Step] }>()
+
+const rows = computed(() => layout(props.recipe))
+const stateOf = (s: Step) =>
+  props.run?.done.includes(s.id) ? 'done' : props.run?.active.includes(s.id) ? 'up' : 'later'
+const label = (s: Step) =>
+  s.kind === 'timer' ? s.name || `${formatDuration(s.durationMs)} timer` : s.text.replace(/\[|\]/g, '')
+
+// Lines are drawn between the real boxes, measured after each render.
+const box = ref<HTMLElement>()
+const nodes = new Map<string, HTMLElement>()
+const setNode = (id: string) => (el: unknown) => {
+  if (el instanceof HTMLElement) nodes.set(id, el)
+  else nodes.delete(id)
+}
+const lines = ref<string[]>([])
+const size = ref({ w: 0, h: 0 })
+
+function measure() {
+  const root = box.value
+  if (!root) return
+  const origin = root.getBoundingClientRect()
+  size.value = { w: root.clientWidth, h: root.clientHeight }
+  const centre = (id: string) => {
+    const r = nodes.get(id)?.getBoundingClientRect()
+    return r ? { x: r.left - origin.left + r.width / 2, top: r.top - origin.top, bottom: r.bottom - origin.top } : null
+  }
+  const out: string[] = []
+  for (const step of props.recipe.steps) {
+    const to = centre(step.id)
+    if (!to) continue
+    for (const id of step.after) {
+      const from = centre(id)
+      if (!from) continue
+      const mid = (from.bottom + to.top) / 2
+      out.push(`M${from.x},${from.bottom} C${from.x},${mid} ${to.x},${mid} ${to.x},${to.top}`)
+    }
+  }
+  lines.value = out
+}
+
+let watcher: ResizeObserver | undefined
+onMounted(() => {
+  measure()
+  watcher = new ResizeObserver(measure)
+  if (box.value) watcher.observe(box.value)
+})
+onBeforeUnmount(() => watcher?.disconnect())
+watch(
+  () => [
+    props.recipe.steps.map((s) => `${s.id}:${s.after.join()}`).join('|'),
+    props.run?.done.length,
+    props.run?.active.length,
+  ],
+  () => void nextTick(measure),
+)
+</script>
+
+<template>
+  <div ref="box" class="graph">
+    <svg class="lines" :width="size.w" :height="size.h" aria-hidden="true">
+      <path v-for="(d, i) in lines" :key="i" :d="d" />
+    </svg>
+    <div v-for="(row, r) in rows" :key="r" class="row">
+      <button
+        v-for="s in row"
+        :key="s.id"
+        :ref="setNode(s.id)"
+        type="button"
+        class="node"
+        :class="[stateOf(s), s.kind]"
+        :disabled="!editable && !run"
+        :aria-label="`${label(s)}${s.kind === 'timer' ? `, ${formatDuration(s.durationMs)}` : ''}${stateOf(s) === 'done' ? ', done' : stateOf(s) === 'up' ? ', now' : ''}`"
+        @click="emit('pick', s)"
+      >
+        <span class="glyph">
+          <FoodIcon v-if="s.kind === 'timer'" :name="s.name" />
+          <svg v-else viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 6h11M9 12h11M9 18h11" />
+            <path d="M3.5 6.2l1.2 1.2 2-2.2M3.5 12.2l1.2 1.2 2-2.2M3.5 18.2l1.2 1.2 2-2.2" />
+          </svg>
+        </span>
+        <span class="text">{{ label(s) }}</span>
+        <span v-if="s.kind === 'timer'" class="time tabular">{{ formatDuration(s.durationMs) }}</span>
+      </button>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.graph {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 4px 0;
+}
+
+.lines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.lines path {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 2.5;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100px;
+  min-height: var(--tap);
+  padding: 8px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 2px solid transparent;
+  text-align: center;
+}
+
+.node:disabled {
+  cursor: default;
+}
+
+.node.up {
+  border-color: var(--accent);
+}
+
+.node.done {
+  opacity: 0.45;
+}
+
+.glyph {
+  display: grid;
+  place-items: center;
+  height: 26px;
+  font-size: 1.3rem;
+  color: var(--accent-text);
+}
+
+.text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 0.85rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.note .text {
+  font-weight: 550;
+}
+
+.time {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+/* Three across on a phone: narrower boxes, same rows. */
+@media (max-width: 400px) {
+  .node {
+    width: 92px;
+  }
+}
+</style>

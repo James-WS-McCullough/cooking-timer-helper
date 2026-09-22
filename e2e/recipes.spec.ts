@@ -73,7 +73,10 @@ test('steps follow one another, each in the place of the last, and the chain can
   await sheet(page).getByRole('button', { name: 'Close' }).click()
   await page.getByRole('button', { name: 'Prep a timer' }).click()
   await sheet(page).getByRole('button', { name: 'Prep Stir fry: 3 steps · 13 min' }).click()
-  await expect(sheet(page)).toBeHidden()
+  const recipe = page.getByRole('dialog', { name: 'Stir fry' })
+  await expect(recipe).toContainText('3 steps · 13 min')
+  await recipe.getByRole('button', { name: 'Prep Stir fry' }).click()
+  await expect(recipe).toBeHidden()
   await expect(card(page, 'Veg')).toBeVisible()
   await expect(card(page, 'Veg')).toContainText('Ready to start')
   await expect(page.locator('.card')).toHaveCount(1)
@@ -95,4 +98,68 @@ test('a recipe step is not Sync Finish material, and ✕ removes the whole chain
   await confirm.getByRole('button', { name: 'Remove Rice' }).click()
   await expect(card(page, 'Rice')).toHaveCount(0)
   await expect(card(page, 'Potatoes')).toBeVisible()
+})
+
+test('the recipe screen: servings scale the ingredients, a branch forks the graph and lands together', async ({
+  page,
+}) => {
+  await controlClock(page)
+  await page.addInitScript(() => {
+    const none = { kind: 'none', everyMs: 0, label: 'Flip', pause: false }
+    const steps = [
+      { id: 'chop', kind: 'note', text: 'Chop the [Onions]', after: [] },
+      { id: 'mash', kind: 'timer', name: 'Mash', durationMs: 20 * 60_000, plan: none, after: ['chop'] },
+      { id: 'serve', kind: 'note', text: 'Add [Butter] and serve', after: ['mash'] },
+    ]
+    const ingredients = [
+      { id: 'i1', name: 'Onions', amount: 2, unit: '' },
+      { id: 'i2', name: 'Butter', amount: 50, unit: 'g' },
+    ]
+    localStorage.setItem(
+      'sizzle:v1',
+      JSON.stringify({
+        version: 3,
+        timers: [],
+        notes: [],
+        runs: [],
+        presets: [],
+        history: {},
+        recipes: [{ id: 'r', name: 'Mash', steps, ingredients, serves: 4 }],
+      }),
+    )
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Prep a timer' }).click()
+  await sheet(page)
+    .getByRole('button', { name: /Prep Mash/ })
+    .click()
+  const recipe = page.getByRole('dialog', { name: 'Mash' })
+  await expect(recipe).toContainText('Serves 4')
+  await expect(recipe.getByRole('button', { name: '2 onions' })).toBeVisible()
+  await recipe.getByRole('button', { name: 'Fewer' }).click()
+  await recipe.getByRole('button', { name: 'Fewer' }).click()
+  await expect(recipe).toContainText('Serves 2')
+  await expect(recipe.getByRole('button', { name: '1 onions' })).toBeVisible()
+  await expect(recipe.getByRole('button', { name: '25 g butter' })).toBeVisible()
+
+  // Branch off "Chop": veg alongside the mash. The graph shows the fork.
+  await recipe.getByRole('button', { name: /^Chop the Onions/ }).click()
+  await recipe.getByRole('button', { name: 'Add a step after this' }).click()
+  await expect(sheet(page).getByText('After Chop the [Onions]')).toBeVisible()
+  await sheet(page).getByRole('button', { name: 'A timer' }).click()
+  await sheet(page).getByRole('button', { name: 'Veg', exact: true }).click()
+  await sheet(page).getByRole('button', { name: '4', exact: true }).click()
+  await expect(recipe).toBeVisible() // back where we were
+  await expect(recipe.getByRole('button', { name: 'Veg, 4 min' })).toBeVisible()
+
+  await recipe.getByRole('button', { name: 'Prep Mash for 2' }).click()
+  const chop = page.getByRole('article', { name: 'Chop the 1 onions' })
+  await expect(chop).toBeVisible()
+  await chop.getByRole('button', { name: 'Done' }).click()
+  // Both branches come up; the short one waits so they land together (16 min of waiting).
+  const mash = page.getByRole('article', { name: 'Mash', exact: true })
+  const veg = page.getByRole('article', { name: 'Veg', exact: true })
+  await expect(mash).toContainText('Ready to start')
+  await expect(veg).toContainText('Start in')
+  await expect(veg.getByRole('timer')).toHaveText(clockNear('16:00'))
 })

@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
+  addStepAfter,
   appendStep,
   completeStep,
+  forkDelays,
+  layout,
+  msFrom,
   noteStep,
   type Recipe,
+  removeStep,
   runFinished,
   runRecipe,
   saveAs,
@@ -96,5 +101,71 @@ describe('forks and joins (the shape the graph view will edit)', () => {
     expect(completeStep(run, mash.id).map((s) => s.id)).toEqual([plate.id])
     expect(totalMs(recipe)).toBe(20 * MIN) // the longest lane
     expect(tails(recipe).map((s) => s.id)).toEqual([plate.id])
+  })
+})
+
+describe('shape and ingredients (the graph view and the recipe screen)', () => {
+  it('lays steps out in rows: each below everything it waits for', () => {
+    const prep = noteStep('Peel and chop')
+    const mash = timerStep('Mash', 20 * MIN, NO_ALERTS, [prep.id])
+    const beef = timerStep('Beef', 15 * MIN, NO_ALERTS, [prep.id])
+    const rest = noteStep('Rest the beef', [beef.id])
+    const plate = noteStep('Plate up', [mash.id, rest.id])
+    const recipe: Recipe = { id: 'r', name: '', steps: [prep, mash, beef, rest, plate] }
+    expect(layout(recipe).map((row) => row.map((s) => s.id))).toEqual([
+      [prep.id],
+      [mash.id, beef.id],
+      [rest.id],
+      [plate.id],
+    ])
+  })
+
+  it('a branch off a node forks; "+ Next step" after that joins the open ends', () => {
+    const veg = timerStep('Veg', 5 * MIN, NO_ALERTS)
+    const run = startRun(veg)
+    const rice = timerStep('Rice', 12 * MIN, NO_ALERTS)
+    addStepAfter(run.recipe, rice, [veg.id])
+    const sauce = timerStep('Sauce', 3 * MIN, NO_ALERTS)
+    addStepAfter(run.recipe, sauce, [veg.id])
+    expect(tails(run.recipe).map((s) => s.id)).toEqual([rice.id, sauce.id])
+    const serve = noteStep('Serve')
+    appendStep(run.recipe, serve)
+    expect(serve.after).toEqual([rice.id, sauce.id])
+    expect(totalMs(run.recipe)).toBe(17 * MIN)
+  })
+
+  it('at a fork, the branch with more cooking ahead starts first and the rest wait', () => {
+    const prep = noteStep('Chop')
+    const mash = timerStep('Mash', 20 * MIN, NO_ALERTS, [prep.id])
+    const beef = timerStep('Beef', 15 * MIN, NO_ALERTS, [prep.id])
+    const rest = timerStep('Rest', 5 * MIN, NO_ALERTS, [beef.id])
+    const recipe: Recipe = { id: 'r', name: '', steps: [prep, mash, beef, rest] }
+    expect(msFrom(recipe, beef.id)).toBe(20 * MIN) // beef then rest
+    const delays = forkDelays(recipe, [mash.id, beef.id])
+    expect(delays.get(mash.id)).toBe(0)
+    expect(delays.get(beef.id)).toBe(0) // both lanes are 20 min
+    const quick = timerStep('Peas', 4 * MIN, NO_ALERTS, [prep.id])
+    recipe.steps.push(quick)
+    expect(forkDelays(recipe, [mash.id, quick.id]).get(quick.id)).toBe(16 * MIN)
+  })
+
+  it('removing a step keeps the chain joined', () => {
+    const { run, veg, bowl, chicken } = stirFry()
+    removeStep(run.recipe, bowl.id)
+    expect(run.recipe.steps.map((s) => s.id)).toEqual([veg.id, chicken.id])
+    expect(chicken.after).toEqual([veg.id])
+  })
+
+  it('an instruction that names [ingredients] puts them on the list once, amounts to fill in', () => {
+    const { run } = stirFry()
+    appendStep(run.recipe, noteStep('Add [Diced chicken] and [Soy sauce]'))
+    appendStep(run.recipe, noteStep('More [diced chicken]'))
+    expect(run.recipe.ingredients?.map((i) => [i.name, i.amount])).toEqual([
+      ['Diced chicken', null],
+      ['Soy sauce', null],
+    ])
+    const saved = saveAs(run, 'Stir fry')
+    expect(saved.ingredients).toHaveLength(2)
+    expect(runRecipe(saved, 2).serves).toBe(2)
   })
 })

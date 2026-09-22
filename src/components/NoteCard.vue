@@ -3,6 +3,7 @@
 // the step before it was, and its Done brings up whatever follows.
 import { computed, ref } from 'vue'
 import { useDialog } from '../lib/dialog'
+import { pieces, plainText } from '../lib/ingredients'
 import { type Note, stepPosition } from '../lib/recipe'
 import { doneNote, removeRun, stepContext, stepsAfter } from '../store'
 import NextStepButton from './NextStepButton.vue'
@@ -19,6 +20,22 @@ const where = computed(() => {
 })
 const following = computed(() => stepsAfter(props.note))
 
+// "Add [Diced chicken]" → "Add" + a chip reading "300 g diced chicken", scaled to this run's servings.
+const parts = computed(() => {
+  const c = context.value
+  const list = c?.run.recipe.ingredients ?? []
+  return pieces(props.note.text, list, c?.run.recipe.serves ?? null, c?.run.serves ?? null)
+})
+const spoken = computed(() => {
+  const c = context.value
+  return plainText(
+    props.note.text,
+    c?.run.recipe.ingredients ?? [],
+    c?.run.recipe.serves ?? null,
+    c?.run.serves ?? null,
+  )
+})
+
 // The same two-tap remove as a timer card, over this card only (TimerCard.vue explains).
 const confirming = ref(false)
 const card = ref<HTMLElement>()
@@ -33,7 +50,7 @@ function askRemove() {
 </script>
 
 <template>
-  <article ref="card" class="card is-note" :aria-label="note.text">
+  <article ref="card" class="card is-note" :aria-label="spoken">
     <header class="top">
       <span class="icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -42,12 +59,17 @@ function askRemove() {
         </svg>
       </span>
       <span class="where">{{ where }}</span>
-      <NextStepButton :name="note.text" :following="following" @click="emit('next')" />
+      <NextStepButton :name="spoken" :following="following" @click="emit('next')" />
       <button class="remove" :aria-label="`Remove this recipe`" @click="askRemove">✕</button>
     </header>
 
-    <h2 class="text">{{ note.text }}</h2>
-    <button class="big" :aria-label="`Done: ${note.text}`" @click="doneNote(note.id)">Done</button>
+    <h2 class="text">
+      <template v-for="(p, i) in parts" :key="i">
+        <span v-if="p.ingredient" class="chip">{{ p.text }}</span>
+        <template v-else>{{ p.text }}</template>
+      </template>
+    </h2>
+    <button class="big" :aria-label="`Done: ${spoken}`" @click="doneNote(note.id)">Done</button>
 
     <Transition name="confirm">
       <div v-if="confirming" ref="confirmBox" class="confirm" role="alertdialog" aria-modal="true" aria-label="Remove this recipe and its steps?">
@@ -110,6 +132,16 @@ function askRemove() {
   font-weight: 700;
   line-height: 1.3;
   text-wrap: balance;
+}
+
+.chip {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: var(--accent-text);
+  font-weight: 750;
+  white-space: nowrap;
 }
 
 .big {

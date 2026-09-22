@@ -3,11 +3,11 @@
 // hands over to the ordinary wizard (App.vue opens it with `after` set). One decision per
 // screen: kind, then (for an instruction) the words.
 import { ref, watch } from 'vue'
-import { addNextStep } from '../store'
+import { addStep, type StepTarget } from '../store'
 import SheetShell from './sheet/SheetShell.vue'
 import { useSteps } from './sheet/steps'
 
-const props = defineProps<{ cardId: string; cardName: string }>()
+const props = defineProps<{ target: StepTarget }>()
 const emit = defineEmits<{ close: []; timer: [] }>()
 
 const STEPS = ['kind', 'text'] as const
@@ -25,7 +25,7 @@ watch(step, (now) => {
 
 function add() {
   if (!text.value.trim()) return
-  addNextStep(props.cardId, { kind: 'note', text: text.value })
+  addStep(props.target, { kind: 'note', text: text.value })
   emit('close')
 }
 
@@ -41,7 +41,7 @@ function onSubmit() {
     :step="step"
     :direction="direction"
     :can-go-back="step === 'text'"
-    :badge="`After ${cardName}`"
+    :badge="target.name ? `After ${target.name}` : 'New step'"
     @back="back"
     @close="emit('close')"
     @submit="onSubmit"
@@ -53,7 +53,7 @@ function onSubmit() {
       </button>
       <button type="button" class="option" @click="emit('timer')">
         <strong>A timer</strong>
-        <span>The next thing to cook, ready to start when this one’s done</span>
+        <span>The next thing to cook, ready to start in its turn</span>
       </button>
     </div>
     <template v-else>
@@ -67,7 +67,7 @@ function onSubmit() {
         aria-label="The instruction"
         maxlength="120"
       />
-      <p class="hint">Short and doable in one go. It comes up when {{ cardName }} is done, and waits for you to press Done.</p>
+      <p class="hint">Short and doable in one go. It comes up {{ target.name ? `when ${target.name} is done` : 'in its turn' }}, and waits for you to press Done. Name ingredients in [brackets] and they join the recipe’s list.</p>
     </template>
 
     <template v-if="step === 'text'" #foot>
