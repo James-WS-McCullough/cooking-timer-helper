@@ -16,53 +16,24 @@
 // arena, prepacking, graph optimisation, threads) don't move it, so the worker is shut down
 // after every utterance (release() in transcriber.ts) and the page falls back to ~450 MB.
 //
-// Whisper base is the default. While that's being judged on real phones, opening Sizzle once
-// with ?mic=moonshine (or ?mic=whisper to go back) switches this device over.
-// TODO: drop the loser, and the switch, once it's settled.
+// Whisper base.en it is: judged on a real phone, its accuracy was what mattered. (Moonshine
+// base was the runner-up, four times quicker to answer; if speed ever matters more, that's the
+// one to bring back, remembering it needs max_new_tokens fixed and the trimmed audio.)
 
 export interface SpeechModel {
   /** Remembered once downloaded, so the mic can tell whether to announce a download first. */
   tag: string
   id: string
-  dtype: 'q8' | { encoder_model: 'fp32'; decoder_model_merged: 'q8' }
-  /** Moonshine sizes its answer to the clip and cuts short ones off mid-word ("An hour and a half l"). */
-  maxNewTokens?: number
+  dtype: 'q8'
   bytes: number
   /** Model plus the 14 MB runtime, as the introduction puts it. */
   download: string
 }
 
-const MODELS = {
-  whisper: {
-    tag: 'whisper-base.en',
-    id: 'Xenova/whisper-base.en',
-    dtype: 'q8',
-    bytes: 77_000_000,
-    download: 'about 90 MB',
-  },
-  moonshine: {
-    tag: 'moonshine-base',
-    id: 'onnx-community/moonshine-base-ONNX',
-    // The encoder loses too much accuracy when quantised; the decoder doesn't.
-    dtype: { encoder_model: 'fp32', decoder_model_merged: 'q8' },
-    maxNewTokens: 40,
-    bytes: 123_000_000,
-    download: 'about 140 MB',
-  },
-} satisfies Record<string, SpeechModel>
-
-const KEY = 'sizzle:mic-model'
-
-function chosen(): keyof typeof MODELS {
-  try {
-    const asked = new URLSearchParams(location.search).get('mic')
-    if (asked && asked in MODELS) localStorage.setItem(KEY, asked)
-    const saved = localStorage.getItem(KEY)
-    if (saved && saved in MODELS) return saved as keyof typeof MODELS
-  } catch {
-    /* private mode: the default */
-  }
-  return 'whisper'
+export const speechModel: SpeechModel = {
+  tag: 'whisper-base.en',
+  id: 'Xenova/whisper-base.en',
+  dtype: 'q8',
+  bytes: 77_000_000,
+  download: 'about 90 MB',
 }
-
-export const speechModel: SpeechModel = MODELS[chosen()]

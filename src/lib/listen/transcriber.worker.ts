@@ -22,13 +22,13 @@ if (env.backends.onnx.wasm) {
 }
 
 let model: Promise<AutomaticSpeechRecognitionPipeline> | undefined
-let using: SpeechModel | undefined
 
-// The mic's first model (Moonshine tiny) left 51 MB in the cache of anyone who tried it.
+// The mic's earlier models (Moonshine tiny, then a Moonshine base trial) left up to 170 MB in
+// the cache of anyone who tried them.
 async function forgetOldModel(): Promise<void> {
   try {
     const cache = await caches.open('transformers-cache')
-    for (const request of await cache.keys()) if (request.url.includes('moonshine-tiny')) await cache.delete(request)
+    for (const request of await cache.keys()) if (request.url.includes('moonshine')) await cache.delete(request)
   } catch {
     /* no Cache API here: nothing to tidy */
   }
@@ -36,7 +36,6 @@ async function forgetOldModel(): Promise<void> {
 
 function load(wanted: SpeechModel): Promise<AutomaticSpeechRecognitionPipeline> {
   if (!model) void forgetOldModel()
-  using = wanted
   const files = new Map<string, number>()
   model ??= pipeline('automatic-speech-recognition', wanted.id, {
     device: 'wasm',
@@ -62,11 +61,10 @@ port.onmessage = async ({ data }) => {
       await load(data.model)
       return port.postMessage({ type: 'ready' })
     }
-    if (!model || !using) throw new Error('transcribe before load')
+    if (!model) throw new Error('transcribe before load')
     const asr = await model
-    // The audio arrives already trimmed to the voice (trimSilence): Moonshine returns nothing
-    // at all for a clip that opens with a second of silence.
-    const out = await asr(data.audio, using.maxNewTokens ? { max_new_tokens: using.maxNewTokens } : {})
+    // The audio arrives already trimmed to the voice (trimSilence).
+    const out = await asr(data.audio)
     const text = Array.isArray(out) ? out.map((o) => o.text).join(' ') : out.text
     // Whisper describes what isn't speech: "[BLANK_AUDIO]", "(sizzling)". None of it is a timer.
     port.postMessage({ type: 'text', id: data.id, text: text.replace(/\[[^\]]*\]|\([^)]*\)/g, ' ').trim() })
