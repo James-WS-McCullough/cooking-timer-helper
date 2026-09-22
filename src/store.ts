@@ -1,6 +1,7 @@
 import { reactive, watch } from 'vue'
+import { announce } from './lib/announce'
 import { installAudio, play, soundReady } from './lib/audio'
-import { tidyName } from './lib/format'
+import { formatDuration, tidyName } from './lib/format'
 import { rememberTime } from './lib/history'
 import { type Preset, parseSaved, STORAGE_KEY, serialise } from './lib/storage'
 import {
@@ -68,7 +69,16 @@ function lineFor(t: Timer, moment: Moment): string {
   return lines[moment]
 }
 
-function announce(t: Timer, event: TimerEvent): void {
+/** The timer's name as said to assistive tech: the card's own title. */
+const titleOf = (t: Timer) => t.name || `${formatDuration(t.durationMs)} timer`
+
+function tell(t: Timer, event: TimerEvent): void {
+  if (event === 'finished') announce(`${titleOf(t)} is ready`, true)
+  else if (event === 'due') announce(`Start ${titleOf(t)} now`, true)
+  else announce(`${t.alerts.find((a) => a.state === 'firing')?.label ?? t.plan.label} ${titleOf(t)}`, true)
+}
+
+function announceByVoice(t: Timer, event: TimerEvent): void {
   if (event === 'alert') {
     say(alertPhrase(t, t.alerts.find((a) => a.state === 'firing')?.label ?? t.plan.label), SPEAK_AFTER_SFX_MS, 'urgent')
     return
@@ -84,7 +94,10 @@ function tick(): void {
   let arrived: TimerEvent | null = null
   for (const t of state.timers) {
     const event = advance(t, now)
-    if (event) announce(t, event)
+    if (event) {
+      tell(t, event)
+      announceByVoice(t, event)
+    }
     if (event === 'finished' || (event && !arrived)) arrived = event
   }
 
@@ -97,7 +110,9 @@ function tick(): void {
     if (arrived) remindersSinceSpoken = 0
     else if (++remindersSinceSpoken >= SPOKEN_REMINDER_EVERY) {
       remindersSinceSpoken = 0
-      say(waitingPhrase(state.timers.filter(isPending).map((t) => t.name)), SPEAK_AFTER_SFX_MS)
+      const pending = state.timers.filter(isPending)
+      announce(`Still waiting: ${pending.map(titleOf).join(', ')}`)
+      say(waitingPhrase(pending.map((t) => t.name)), SPEAK_AFTER_SFX_MS)
     }
   }
 
@@ -112,6 +127,7 @@ export function startTimer(name: string, durationMs: number, plan: AlertPlan, pr
   rehearse(lineFor(timer, 'finished'))
   if (!prepped) say(startedPhrase(timer), SPEAK_AFTER_SFX_MS)
   rememberTime(state.history, name, durationMs)
+  announce(`${titleOf(timer)}, ${formatDuration(durationMs)}, ${prepped ? 'prepped' : 'started'}`)
   void play(prepped ? 'beep' : 'start', true)
   tick()
 }
@@ -122,12 +138,14 @@ export function startPreset(preset: Preset, prepped = false): void {
 
 export function pauseEverything(): void {
   pauseAll(state.timers, Date.now())
+  announce('All timers paused')
   void play('beep', true)
   tick()
 }
 
 export function resumeEverything(): void {
   resumeAll(state.timers, Date.now())
+  announce('All timers resumed')
   void play('start', true)
   tick()
 }
@@ -222,7 +240,9 @@ export function installStore(): void {
   // Sound just came on (first tap after reopening the app): don't make anything
   // already pending wait out the rest of a silent 15 seconds.
   watch(soundReady, (ready) => {
-    if (ready) nextNotifyAt = 0
+    if (!ready) return
+    nextNotifyAt = 0
+    if (state.timers.length) announce('Sound on') // the red banner has just gone
   })
 
   watch(

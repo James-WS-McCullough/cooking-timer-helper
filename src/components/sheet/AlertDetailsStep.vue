@@ -2,7 +2,7 @@
 import type { AlertKind } from '../../lib/timer'
 
 // Bell 2 · Alert details (skipped for None)
-defineProps<{ kind: AlertKind; pause: boolean }>()
+defineProps<{ kind: AlertKind; pause: boolean; invalid?: boolean }>()
 // The hold switch reports a toggle rather than a value: the editor needs to know the cook set it by hand.
 const emit = defineEmits<{ togglePause: [] }>()
 
@@ -38,6 +38,8 @@ function pickEvery(min: number) {
       <input
         v-model="customEvery"
         class="field every-field"
+        :aria-invalid="invalid || undefined"
+        :aria-describedby="invalid ? 'every-problem' : undefined"
         inputmode="decimal"
         autocomplete="off"
         placeholder="other"

@@ -107,11 +107,12 @@ function onSubmit() {
       v-model:keep-as-preset="keepAsPreset"
       :kind="kind"
       :pause="pause"
+      :invalid="!!detailsProblem && !!customEvery.trim()"
       @toggle-pause="togglePause"
     />
 
     <template v-if="step === 'details'" #foot>
-      <p v-if="detailsProblem" class="problem" role="alert">{{ detailsProblem }}</p>
+      <p v-if="detailsProblem" id="every-problem" class="problem" role="alert">{{ detailsProblem }}</p>
       <button type="submit" class="next" :disabled="!!detailsProblem">Set alert</button>
     </template>
   </SheetShell>

@@ -28,6 +28,7 @@ A push to `main` runs check → e2e → build → deploy; a red e2e run blocks t
 - **Sounds:** Beep = button feedback (New/Prep/pause/play), Timer Start = something began counting or a pending card was confirmed, Timer Complete = once per finish, Notify = a new flip/due dish, then one shared reminder every 15s while anything is pending.
 - Pause all / Resume all is the deliberate, simple answer to "the kitchen fell behind"; Sync Finish does not re-plan itself.
 - Respect `prefers-reduced-motion` in every animation.
+- **Accessible by construction.** Every dialog gets `useDialog()` from `src/lib/dialog.ts` (focus in, Tab trap, background inert, one Escape handler for the topmost, focus restored); don't add a keydown listener of your own. Anything a cook must know that isn't on screen as text (a dish is ready, sound came on, all paused) goes through `announce()` in `src/lib/announce.ts`, not only Sizzle's voice. Card buttons say which dish (`aria-label`), the countdown is `aria-live="off"`. Text on `--danger` uses `--on-danger`. `e2e/a11y.spec.ts` checks this.
 
 ## Architecture
 

@@ -2,10 +2,14 @@
 // Loaded on demand (see App.vue) so the QR encoder stays out of the main bundle.
 
 import { encode } from 'uqr'
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, ref } from 'vue'
+import { useDialog } from '../lib/dialog'
 import SizzleLogo from './SizzleLogo.vue'
 
 const emit = defineEmits<{ close: [] }>()
+
+const panel = ref<HTMLElement>()
+useDialog(panel, () => emit('close'))
 
 // Wherever this copy of the app is being served from, minus any query or hash.
 const url = new URL(import.meta.env.BASE_URL, window.location.origin).href
@@ -16,17 +20,11 @@ const qr = computed(() => {
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) if (data[y][x]) path += `M${x} ${y}h1v1h-1z`
   return { size, path }
 })
-
-function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') emit('close')
-}
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
   <div class="scrim" @click.self="emit('close')">
-    <div class="panel" role="dialog" aria-modal="true" aria-label="Open Sizzle on another device">
+    <div ref="panel" class="panel" role="dialog" aria-modal="true" aria-label="Open Sizzle on another device">
       <SizzleLogo class="logo" />
       <h2>Sizzle</h2>
       <!-- Always dark on white, whatever the theme: that's what scanners read best. -->

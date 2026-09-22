@@ -23,7 +23,7 @@ test('the bell adds a halfway flip that holds the clock until confirmed', async 
   await pass(page, 2 * MIN)
   await expect(flip).toContainText('10:00 left') // held at exactly halfway, not draining
 
-  await flip.getByRole('button', { name: 'Done · resume' }).click()
+  await flip.getByRole('button', { name: 'Done, Potatoes, resume' }).click()
   await pass(page, MIN)
   await expect(card(page, 'Potatoes').getByRole('timer')).toHaveText(clockNear('9:00'))
 })
@@ -46,7 +46,7 @@ test('a repeating alert keeps counting, and must fit inside the timer', async ({
 
   await pass(page, 5 * MIN + 30_000)
   await expect(card(page, 'Stir Potatoes')).toContainText(new RegExp(`${around('14:30')} left`)) // not held
-  await card(page, 'Stir Potatoes').getByRole('button', { name: 'Done', exact: true }).click()
+  await card(page, 'Stir Potatoes').getByRole('button', { name: 'Done, Potatoes', exact: true }).click()
   await expect(card(page, 'Potatoes')).toContainText(new RegExp(`Stir in ${around('4:30')}`))
 })
 

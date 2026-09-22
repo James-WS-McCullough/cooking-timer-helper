@@ -22,6 +22,7 @@
   --done: #5fe08a; /* finished: food is ready */
   --on-done: #04240f;
   --danger: #ff6b5e;
+  --on-danger: #2b0906; /* white on this coral is only 2.8:1; on the light theme's deeper red, white is fine */
 
   --radius: 18px;
   --radius-sm: 12px;
@@ -51,6 +52,7 @@
   --alert: #ffb829;
   --done: #2fc466;
   --danger: #d23a2c;
+  --on-danger: #ffffff;
 }
 
 *,
@@ -87,10 +89,31 @@ button {
   user-select: none;
 }
 
+/* Present for assistive tech, invisible otherwise. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 button:focus-visible,
 input:focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* On a card lit amber, green or violet the blue ring all but vanishes: use the card's own ink, haloed. */
+.is-alert button:focus-visible,
+.is-finished button:focus-visible,
+.is-due button:focus-visible {
+  outline-color: currentColor;
+  box-shadow: 0 0 0 6px var(--bg);
 }
 
 /* Shared pill used for every pick-one choice (times, names, alert options). */

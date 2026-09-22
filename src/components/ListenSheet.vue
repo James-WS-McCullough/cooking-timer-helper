@@ -4,6 +4,7 @@
 // one big button to start it. A wrong guess costs a tap on "Try again", never a wrong timer.
 // Heard a name but no time? The wizard takes over at "How long?".
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useDialog } from '../lib/dialog'
 import { formatClock } from '../lib/format'
 import { finishListening, ListenError, listen, mic, micReady, stopListening } from '../lib/listen'
 import { speechModel } from '../lib/listen/models'
@@ -15,6 +16,9 @@ import MicIcon from './MicIcon.vue'
 
 const emit = defineEmits<{ close: []; time: [name: string, prep: boolean] }>()
 
+const panel = ref<HTMLElement>()
+useDialog(panel, () => emit('close'))
+
 const view = ref<'intro' | 'busy' | 'result' | 'missed' | 'failed'>(micReady() ? 'busy' : 'intro')
 const heard = ref('')
 const result = ref<Spoken & { durationMs: number }>()
@@ -23,7 +27,7 @@ const failure = ref<'mic' | 'model'>('model')
 const busyTitle = computed(() => {
   if (mic.phase === 'listening') return 'Listening…'
   if (mic.phase === 'thinking') return 'Working it out…'
-  return mic.downloading === null ? 'Getting ready…' : `Downloading ${Math.round(mic.downloading * 100)}%`
+  return mic.downloading === null ? 'Getting ready…' : `Downloading ${Math.floor(mic.downloading * 10) * 10}%` // tens: it's a live region, and every 1% would be read out
 })
 
 // The mic has just opened: a short buzz where the phone can (not iOS), for eyes that are on the pan.
@@ -58,22 +62,15 @@ function confirm() {
   emit('close')
 }
 
-function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') emit('close')
-}
 onMounted(() => {
-  window.addEventListener('keydown', onKey)
   if (view.value === 'busy') void hear()
 })
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKey)
-  stopListening()
-})
+onBeforeUnmount(stopListening)
 </script>
 
 <template>
   <div class="scrim" @click.self="emit('close')">
-    <div class="panel" :class="{ prep: view === 'result' && result?.prep }" role="dialog" aria-modal="true" aria-labelledby="listen-title">
+    <div ref="panel" class="panel" :class="{ prep: view === 'result' && result?.prep }" role="dialog" aria-modal="true" aria-labelledby="listen-title">
       <button class="x" aria-label="Close" @click="emit('close')">✕</button>
 
       <template v-if="view === 'intro'">

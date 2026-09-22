@@ -92,6 +92,10 @@ Food icons are [Fluent Emoji](https://github.com/microsoft/fluentui-emoji) (flat
 - `src/lib/foodIcons.ts`, `src/lib/foodSearch.ts` – name → icon matching and list search, both with tests
 - `src/components/` – `TimerCard.vue` (one timer, in any state); `NewTimerSheet.vue` (the name → time wizard) and `AlertSheet.vue` (the bell's alert editor), both built from `sheet/` (`SheetShell.vue` is the shared bottom sheet, one component per step, shared styles in `sheet.css`); `SyncSheet.vue`; `QrSheet.vue` and `ListenSheet.vue` (the mic; both loaded on demand); `UpdateToast.vue`; `FoodIcon.vue`; `SizzleLogo.vue`
 
+## Accessibility
+
+Every sheet and confirm is a real dialog: focus moves into it, Tab stays inside, the page behind is inert, Escape closes the topmost one and focus returns to what opened it (`src/lib/dialog.ts`). A screen reader hears what matters (a dish is ready, a flip is due, sound came on, everything paused) through a live region fed by the store (`src/lib/announce.ts`), separately from Sizzle's voice; the countdowns themselves are never read. Each card's buttons name their dish. Focus rings hold up on the coloured cards; text on red meets contrast in both themes; reduced motion stops every animation including the reminder glow.
+
 ## Sizzle's voice
 
 Sizzle is also a character: a small round robot in a chef's hat, bottom-left of the start screen. She's the on/off switch for spoken announcements. Off, she's grey and dim; the first tap introduces her ("I am Sizzle, and I can announce what timers are going off") and says what enabling costs; after that she's a plain toggle, remembered on the device.

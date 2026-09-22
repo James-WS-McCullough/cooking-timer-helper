@@ -57,6 +57,8 @@ const lastTimes = computed(() => recentTimes(state.history, props.name))
     v-model="customTime"
     class="field"
     :class="{ bad: invalid }"
+    :aria-invalid="invalid || undefined"
+    :aria-describedby="invalid ? 'time-problem' : undefined"
     inputmode="decimal"
     autocomplete="off"
     enterkeyhint="go"

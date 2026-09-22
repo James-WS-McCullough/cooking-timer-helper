@@ -10,7 +10,9 @@ import TimerCard from './components/TimerCard.vue'
 import UpdateToast from './components/UpdateToast.vue'
 import VoiceBubble from './components/VoiceBubble.vue'
 import VoiceButton from './components/VoiceButton.vue'
+import { announcement } from './lib/announce'
 import { play, soundReady } from './lib/audio'
+import { dialogOpen } from './lib/dialog'
 import { theme, toggleTheme } from './lib/theme'
 import { anyPausedByAll, countingTimers, displayOrder, isPending, statusOf, syncable } from './lib/timer'
 import { pauseEverything, resumeEverything, state } from './store'
@@ -146,17 +148,7 @@ const needsSoundTap = computed(() => !soundReady.value && state.timers.length > 
 
 function onKey(e: KeyboardEvent) {
   const typing = e.target instanceof HTMLInputElement
-  if (
-    (e.key === 'n' || e.key === 'p') &&
-    !typing &&
-    !sheet.value &&
-    !micOpen.value &&
-    !alertsFor.value &&
-    !syncOpen.value &&
-    !settingsOpen.value &&
-    !e.metaKey &&
-    !e.ctrlKey
-  ) {
+  if ((e.key === 'n' || e.key === 'p') && !typing && !dialogOpen() && !e.metaKey && !e.ctrlKey) {
     e.preventDefault()
     openSheet(e.key === 'p' ? 'prep' : 'start')
   }
@@ -167,6 +159,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <div class="app">
+    <!-- For screen readers: what just happened (a dish is ready, a flip is due, sound came on). -->
+    <div class="sr-only" role="status" aria-live="polite">{{ announcement.urgent ? '' : announcement.text }}</div>
+    <div class="sr-only" role="alert">{{ announcement.urgent ? announcement.text : '' }}</div>
     <UpdateToast />
     <VoiceBubble v-if="state.timers.length" />
 
@@ -174,6 +169,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
          sitting on whichever card's bell and ✕ scrolled underneath it. Sizzle's speech bubble
          drops into this strip too, instead of over the first card. -->
     <div v-if="state.timers.length" class="topbar">
+      <h1 class="sr-only">Sizzle timers</h1>
       <button class="gear" aria-label="Settings" @click="settingsOpen = true">
         <!-- Sliders, not a cog: at this size a cog reads as the theme toggle's sun. -->
         <svg
@@ -359,7 +355,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   padding: 14px 16px;
   border-radius: var(--radius-sm);
   background: var(--danger);
-  color: #fff;
+  color: var(--on-danger);
   text-align: left;
 }
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useDialog } from '../../lib/dialog'
 import type { Direction } from './steps'
 
 // The bottom sheet every step-by-step flow sits in: scrim, header (back, progress
@@ -19,10 +20,6 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ close: []; back: []; submit: [] }>()
 
-function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') emit('close')
-}
-
 // On phones the on-screen keyboard covers the bottom of the page without resizing
 // it, which would bury most of the sheet. Track the area that's actually visible
 // and fit the sheet to that instead.
@@ -31,6 +28,8 @@ function onKey(e: KeyboardEvent) {
 // 340px), the search switches to a compact layout: the sheet takes the whole
 // visible area, edge to edge, and results flow in columns instead of one list.
 const scrim = ref<HTMLElement>()
+const sheet = ref<HTMLElement>()
+useDialog(sheet, () => emit('close'))
 const shortView = ref(false)
 const compact = computed(() => props.immersive && shortView.value)
 
@@ -43,13 +42,11 @@ function fitToVisibleArea() {
 }
 
 onMounted(() => {
-  window.addEventListener('keydown', onKey)
   window.visualViewport?.addEventListener('resize', fitToVisibleArea)
   window.visualViewport?.addEventListener('scroll', fitToVisibleArea)
   fitToVisibleArea()
 })
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKey)
   window.visualViewport?.removeEventListener('resize', fitToVisibleArea)
   window.visualViewport?.removeEventListener('scroll', fitToVisibleArea)
 })
@@ -57,7 +54,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="scrim" class="scrim" @click.self="emit('close')">
-    <form class="sheet" :class="{ prep, compact }" role="dialog" aria-modal="true" aria-labelledby="sheet-title" @submit.prevent="emit('submit')">
+    <form ref="sheet" class="sheet" :class="{ prep, compact }" role="dialog" aria-modal="true" aria-labelledby="sheet-title" @submit.prevent="emit('submit')">
       <!-- While searching, every pixel goes to results: the header's back arrow moves into the step's search row -->
       <header v-show="!immersive" class="head">
         <button v-if="canGoBack" type="button" class="nav" aria-label="Back" @click="emit('back')">

@@ -3,7 +3,8 @@
 // row inside Settings (`inline`) once timers are running. Off: grey and dim.
 // On: lit, looking about, and she says hello. The very first tap introduces her (and
 // says how big the download is) before anything is fetched; after that it's a plain toggle.
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useDialog } from '../lib/dialog'
 import { setVoiceEnabled, voice, voiceIntroduced } from '../lib/voice'
 import RobotFace from './RobotFace.vue'
 
@@ -14,7 +15,7 @@ const introOpen = ref(false)
 const lit = computed(() => voice.enabled && voice.status !== 'error')
 const caption = computed(() => {
   if (voice.status === 'loading') {
-    return voice.downloading === null ? 'Waking up…' : `Downloading ${Math.round(voice.downloading * 100)}%`
+    return voice.downloading === null ? 'Waking up…' : `Downloading ${Math.floor(voice.downloading * 10) * 10}%` // tens: it's a live region, and every 1% would be read out
   }
   if (voice.status === 'error') return "Couldn't load my voice"
   return voice.enabled ? 'Voice on' : 'Voice off'
@@ -31,11 +32,8 @@ function enable() {
   void setVoiceEnabled(true)
 }
 
-function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') introOpen.value = false
-}
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+const intro = ref<HTMLElement>()
+useDialog(intro, () => (introOpen.value = false), { when: introOpen })
 </script>
 
 <template>
@@ -61,7 +59,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <Teleport to="body">
     <Transition name="intro">
       <div v-if="introOpen" class="scrim" @click.self="introOpen = false">
-        <div class="panel" role="dialog" aria-modal="true" aria-labelledby="voice-intro-title">
+        <div ref="intro" class="panel" role="dialog" aria-modal="true" aria-labelledby="voice-intro-title">
           <RobotFace class="hello" :level="0" :speaking="false" />
           <h2 id="voice-intro-title">Hello!</h2>
           <p class="lead">I am Sizzle, and I can announce what timers are going off.</p>

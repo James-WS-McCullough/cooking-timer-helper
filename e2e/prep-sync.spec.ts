@@ -44,7 +44,7 @@ test('Sync Finish: plan, ready-at time, pre-timers, and Start when one comes due
   const due = card(page, 'Start Chicken')
   await expect(due).toBeVisible()
   await pass(page, 2 * MIN) // nothing starts until the cook says it's on
-  await due.getByRole('button', { name: 'Start', exact: true }).click()
+  await due.getByRole('button', { name: 'Start Chicken', exact: true }).click()
   await expect(card(page, 'Chicken').getByRole('timer')).toHaveText(clockNear('25:00'))
 })
 

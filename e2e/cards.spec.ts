@@ -8,7 +8,7 @@ test('+30s adds time; pause holds it; play carries on', async ({ page }) => {
   const clock = card(page, 'Rice').getByRole('timer')
   await expect(clock).toHaveText(clockNear('10:00'))
 
-  await card(page, 'Rice').getByRole('button', { name: '+30s' }).click()
+  await card(page, 'Rice').getByRole('button', { name: '30 seconds more' }).click()
   await expect(clock).toHaveText(clockNear('10:30'))
   await pass(page, MIN)
   await expect(clock).toHaveText(clockNear('9:30'))

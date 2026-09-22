@@ -1,23 +1,21 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+import { useDialog } from '../lib/dialog'
 // The few things that aren't about a timer: Sizzle's voice, light/dark, and the QR
 // code. On the start screen they're loose buttons; once timers are running they
 // live here, behind the gear.
-import { onBeforeUnmount, onMounted } from 'vue'
 import { theme, toggleTheme } from '../lib/theme'
 import VoiceButton from './VoiceButton.vue'
 
 const emit = defineEmits<{ close: []; qr: [] }>()
 
-function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') emit('close')
-}
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+const panel = ref<HTMLElement>()
+useDialog(panel, () => emit('close'))
 </script>
 
 <template>
   <div class="scrim" @click.self="emit('close')">
-    <div class="panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div ref="panel" class="panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <header>
         <h2 id="settings-title">Settings</h2>
         <button class="x" aria-label="Close" @click="emit('close')">✕</button>

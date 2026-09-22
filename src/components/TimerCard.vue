@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useDialog } from '../lib/dialog'
 import { formatClock, formatDuration, formatSince } from '../lib/format'
 import {
   elapsedMs,
@@ -67,7 +68,11 @@ const pendingNote = computed(() => {
 // (on the card or off it) backs out, and it backs out by itself if left alone, so a
 // live Remove button is never sitting there waiting for an elbow.
 const confirming = ref(false)
+const card = ref<HTMLElement>()
+const confirmBox = ref<HTMLElement>()
 const confirmButton = ref<HTMLElement>()
+// Keyboard and screen reader: focus lands on Remove, the rest of the card is inert meanwhile, Escape backs out.
+useDialog(confirmBox, () => (confirming.value = false), { when: confirming, within: card, focus: 'first' })
 let backOut: ReturnType<typeof setTimeout> | undefined
 
 function dismissOnOutsideTap(e: Event) {
@@ -91,7 +96,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <article class="card" :class="`is-${status}`" :aria-label="title">
+  <article ref="card" class="card" :class="`is-${status}`" :aria-label="title">
     <!-- Needs the cook: headline, then one unmissable button -->
     <template v-if="pending">
       <!-- Re-created on every reminder sound, which replays its one-shot animation. -->
@@ -110,13 +115,13 @@ onBeforeUnmount(() => {
           </svg>
         </span>
         <div class="finish">
-          <button class="big" @click="completeTimer(timer.id)">Done</button>
-          <button class="ghost" @click="extendTimer(timer.id, MORE)">+30s</button>
+          <button class="big" :aria-label="`Done, ${title}`" @click="completeTimer(timer.id)">Done</button>
+          <button class="ghost" :aria-label="`30 seconds more for ${title}`" @click="extendTimer(timer.id, MORE)">+30s</button>
         </div>
       </template>
       <!-- Synced dish: its pre-timer is up. The cook confirms it's on, and the real timer starts. -->
-      <button v-else-if="status === 'due'" class="big" @click="resumeTimer(timer.id)">Start</button>
-      <button v-else class="big" @click="acknowledgeTimer(timer.id)">
+      <button v-else-if="status === 'due'" class="big" :aria-label="`Start ${title}`" @click="resumeTimer(timer.id)">Start</button>
+      <button v-else class="big" :aria-label="`Done, ${title}${timer.pausedBy === 'alert' ? ', resume' : ''}`" @click="acknowledgeTimer(timer.id)">
         {{ timer.pausedBy === 'alert' ? 'Done · resume' : 'Done' }}
       </button>
     </template>
@@ -141,28 +146,29 @@ onBeforeUnmount(() => {
       </header>
 
       <div class="main">
-        <p class="clock tabular" :class="{ long: clock >= 60 * MIN }" role="timer">
+        <!-- Changes every second: must never be read aloud on its own. -->
+        <p class="clock tabular" :class="{ long: clock >= 60 * MIN }" role="timer" aria-live="off">
           <small v-if="waiting">Start in</small>
           {{ formatClock(clock) }}
         </p>
         <!-- Synced and waiting: it will ask when it's time, but it can go on early -->
-        <button v-if="waiting" class="ctl early" @click="resumeTimer(timer.id)">Start now</button>
+        <button v-if="waiting" class="ctl early" :aria-label="`Start ${title} now`" @click="resumeTimer(timer.id)">Start now</button>
         <!-- Prepped: nothing to adjust yet, just the way to set it going -->
-        <button v-else-if="status === 'prepped'" class="ctl go" @click="resumeTimer(timer.id)">
+        <button v-else-if="status === 'prepped'" class="ctl go" :aria-label="`Start ${title}`" @click="resumeTimer(timer.id)">
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
             <path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5Z" fill="currentColor" />
           </svg>
           Start
         </button>
         <span v-else class="actions">
-          <button class="ctl more" @click="extendTimer(timer.id, MORE)">+30s</button>
-          <button v-if="status === 'running'" class="ctl" aria-label="Pause" @click="pauseTimer(timer.id)">
+          <button class="ctl more" :aria-label="`30 seconds more for ${title}`" @click="extendTimer(timer.id, MORE)">+30s</button>
+          <button v-if="status === 'running'" class="ctl" :aria-label="`Pause ${title}`" @click="pauseTimer(timer.id)">
             <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
               <rect x="5" y="4" width="5" height="16" rx="1.5" fill="currentColor" />
               <rect x="14" y="4" width="5" height="16" rx="1.5" fill="currentColor" />
             </svg>
           </button>
-          <button v-else class="ctl play" aria-label="Resume" @click="resumeTimer(timer.id)">
+          <button v-else class="ctl play" :aria-label="`Resume ${title}`" @click="resumeTimer(timer.id)">
             <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
               <path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5Z" fill="currentColor" />
             </svg>
@@ -172,8 +178,8 @@ onBeforeUnmount(() => {
 
       <!-- "Are you sure?", as a little modal over this card only -->
       <Transition name="confirm">
-        <div v-if="confirming" class="confirm" role="alertdialog" :aria-label="`Remove ${title}?`">
-          <button ref="confirmButton" class="confirm-button" @click="removeTimer(timer.id)">Remove</button>
+        <div v-if="confirming" ref="confirmBox" class="confirm" role="alertdialog" aria-modal="true" :aria-label="`Remove ${title}?`">
+          <button ref="confirmButton" class="confirm-button" :aria-label="`Remove ${title}`" @click="removeTimer(timer.id)">Remove</button>
         </div>
       </Transition>
 
@@ -242,9 +248,9 @@ onBeforeUnmount(() => {
   flex: none;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 36px;
-  margin: 0 -6px;
+  width: 44px;
+  height: 44px;
+  margin: -4px -8px;
   border-radius: 10px;
   color: var(--text-dim);
 }
@@ -259,10 +265,10 @@ onBeforeUnmount(() => {
 
 .remove {
   flex: none;
-  min-width: 40px;
-  height: 36px;
+  min-width: 44px;
+  height: 44px;
   padding: 0 10px;
-  margin: 0 -10px 0 -6px;
+  margin: -4px -12px -4px -6px;
   border-radius: 10px;
   color: var(--text-dim);
   font-weight: 600;
@@ -290,7 +296,7 @@ onBeforeUnmount(() => {
   padding: 0 28px;
   border-radius: 28px;
   background: var(--danger);
-  color: #fff;
+  color: var(--on-danger);
   font-size: 1.25rem;
   font-weight: 800;
   box-shadow: 0 6px 20px rgb(0 0 0 / 0.4);
@@ -742,6 +748,10 @@ onBeforeUnmount(() => {
   }
   .card.is-finished.cards-leave-active .tick {
     display: none;
+  }
+  .shimmer,
+  .shimmer::before {
+    animation: none;
   }
   .shimmer::before {
     display: none;

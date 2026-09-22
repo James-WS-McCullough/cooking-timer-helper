@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, ref } from 'vue'
+import { useDialog } from '../lib/dialog'
 import { formatDuration } from '../lib/format'
 import { syncPlan } from '../lib/timer'
 import { state, syncAndStart } from '../store'
 import FoodIcon from './FoodIcon.vue'
 
 const emit = defineEmits<{ close: [] }>()
+
+const panel = ref<HTMLElement>()
+useDialog(panel, () => emit('close'))
 
 const plan = computed(() => syncPlan(state.timers))
 
@@ -24,17 +28,11 @@ function go() {
   syncAndStart()
   emit('close')
 }
-
-function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') emit('close')
-}
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
   <div class="scrim" @click.self="emit('close')">
-    <div class="panel" role="dialog" aria-modal="true" aria-labelledby="sync-title">
+    <div ref="panel" class="panel" role="dialog" aria-modal="true" aria-labelledby="sync-title">
       <header>
         <h2 id="sync-title">Sync Finish</h2>
         <button class="x" aria-label="Close" @click="emit('close')">✕</button>

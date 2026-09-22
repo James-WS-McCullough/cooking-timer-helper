@@ -100,7 +100,7 @@ function onSubmit() {
       <button type="submit" class="next">{{ name.trim() ? 'Next' : 'Skip name' }}</button>
     </template>
     <template v-else-if="step === 'time' && customTime.trim()" #foot>
-      <p v-if="timeProblem" class="problem" role="alert">{{ timeProblem }}</p>
+      <p v-if="timeProblem" id="time-problem" class="problem" role="alert">{{ timeProblem }}</p>
       <button type="submit" class="next tabular" :disabled="!!timeProblem">
         {{ prep ? 'Prep' : 'Start' }}{{ customMs && !timeProblem ? ` ${formatClock(customMs)}` : '' }}
       </button>

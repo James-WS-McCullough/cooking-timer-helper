@@ -434,7 +434,7 @@ watch(
   height: 42px;
   border-radius: 50%;
   background: var(--danger);
-  color: #fff;
+  color: var(--on-danger);
   box-shadow: 0 3px 10px rgb(0 0 0 / 0.35);
   transition: transform 0.1s ease;
 }
