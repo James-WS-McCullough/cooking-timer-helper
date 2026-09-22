@@ -1,8 +1,24 @@
-import { reactive, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { announce } from './lib/announce'
 import { installAudio, play, soundReady } from './lib/audio'
 import { formatDuration, tidyName } from './lib/format'
 import { rememberTime } from './lib/history'
+import {
+  appendStep,
+  completeStep,
+  type Note,
+  noteStep,
+  type Recipe,
+  type Run,
+  runFinished,
+  runRecipe,
+  type Step,
+  type StepRef,
+  saveAs,
+  startRun,
+  stepById,
+  timerStep,
+} from './lib/recipe'
 import { type Preset, parseSaved, STORAGE_KEY, serialise } from './lib/storage'
 import {
   type AlertPlan,
@@ -23,9 +39,18 @@ import {
   uid,
 } from './lib/timer'
 import { rehearse, say } from './lib/voice'
-import { alertPhrase, duePhrase, finishedPhrase, startedPhrase, syncedPhrase, waitingPhrase } from './lib/voice/phrases'
+import {
+  alertPhrase,
+  duePhrase,
+  finishedPhrase,
+  nextUpPhrase,
+  startedPhrase,
+  syncedPhrase,
+  waitingPhrase,
+} from './lib/voice/phrases'
 import { installWakeLock, setWakeLock } from './lib/wakeLock'
 
+export type { Note, Recipe, Step } from './lib/recipe'
 export type { Preset } from './lib/storage'
 
 function readStorage(): string | null {
@@ -40,6 +65,9 @@ const saved = parseSaved(readStorage())
 
 export const state = reactive({
   timers: saved.timers,
+  notes: saved.notes, // instruction steps on screen
+  runs: saved.runs, // recipes (or chains built as they're cooked) in progress
+  recipes: saved.recipes,
   presets: saved.presets,
   history: saved.history,
   now: Date.now(),
@@ -190,6 +218,14 @@ export function removeTimer(id: string): void {
   tick(true)
 }
 
+/** ✕ on a card that is a step: the whole chain goes, cards and all. */
+export function removeRun(runId: string): void {
+  state.runs = state.runs.filter((r) => r.id !== runId)
+  state.timers = state.timers.filter((t) => t.step?.runId !== runId)
+  state.notes = state.notes.filter((n) => n.step.runId !== runId)
+  tick(true)
+}
+
 function withTimer(id: string, fn: (t: Timer, now: number) => void): void {
   const t = state.timers.find((x) => x.id === id)
   if (!t) return
@@ -204,10 +240,137 @@ export const acknowledgeTimer = (id: string) =>
     void play('start', true)
   })
 
-/** "Done" on a finished timer. Same confirming sound as any other Done, then the card goes. */
+/** "Done" on a finished timer. Same confirming sound as any other Done, then the card goes (and the next step comes, if there is one). */
 export function completeTimer(id: string): void {
   void play('start', true)
+  const step = state.timers.find((t) => t.id === id)?.step
   removeTimer(id)
+  if (step) stepDone(step, id)
+}
+
+// ---- Recipes: chains of steps ----
+
+const runById = (id: string) => state.runs.find((r) => r.id === id)
+
+/** Cards just brought up by a step's Done, and the card each replaces, so the list can put them in its place. */
+export const arrivals = ref<{ id: string; inPlaceOf: string }[]>([])
+
+/** Put a step on screen: a timer step as a prepped timer (Start when ready), an instruction as a note. */
+function bringUp(run: Run, step: Step, now: number, inPlaceOf: string): void {
+  const ref: StepRef = { runId: run.id, stepId: step.id }
+  if (step.kind === 'timer') {
+    const timer = createTimer(step.name, step.durationMs, step.plan, now, true)
+    timer.step = ref
+    state.timers.push(timer)
+    rehearse(lineFor(timer, 'finished'))
+    arrivals.value.push({ id: timer.id, inPlaceOf })
+    announce(`Next: ${titleOf(timer)}, ${formatDuration(step.durationMs)}. Start it when ready`)
+    say(nextUpPhrase(timer), SPEAK_AFTER_SFX_MS)
+  } else {
+    const note: Note = { id: uid(), text: step.text, createdAt: now, step: ref }
+    state.notes.push(note)
+    arrivals.value.push({ id: note.id, inPlaceOf })
+    announce(step.text)
+    say(step.text, SPEAK_AFTER_SFX_MS, 'urgent')
+  }
+}
+
+/** A step's card has had its Done: the run moves on. A run whose every step is done is over. */
+function stepDone(ref: StepRef, cardId: string): void {
+  const run = runById(ref.runId)
+  if (!run) return
+  const now = Date.now()
+  for (const next of completeStep(run, ref.stepId)) bringUp(run, next, now, cardId)
+  if (runFinished(run)) {
+    state.runs = state.runs.filter((r) => r !== run)
+    if (!run.recipe.name && run.recipe.steps.length > 1) justFinished.value = run
+  }
+  tick(true)
+}
+
+/** A chain that has just been cooked end to end and has no name yet: the app offers to save it. */
+export const justFinished = ref<Run | null>(null)
+
+/** Done on an instruction card. */
+export function doneNote(id: string): void {
+  const note = state.notes.find((n) => n.id === id)
+  if (!note) return
+  void play('start', true)
+  state.notes = state.notes.filter((n) => n !== note)
+  stepDone(note.step, id)
+}
+
+/** The run a card belongs to, starting one around a lone timer if it isn't in one yet. */
+function runFor(card: Timer | Note): Run {
+  if (card.step) {
+    const run = runById(card.step.runId)
+    if (run) return run
+  }
+  const timer = card as Timer
+  const first = timerStep(timer.name, timer.durationMs, timer.plan)
+  const run = startRun(first)
+  timer.step = { runId: run.id, stepId: first.id }
+  if (statusOf(timer) === 'finished') completeStep(run, first.id) // its Done is still to come; nothing follows yet
+  state.runs.push(run)
+  return run
+}
+
+/** "+ Next step" on a card: the step goes on the end of that card's chain. */
+export function addNextStep(
+  cardId: string,
+  step: { kind: 'note'; text: string } | { kind: 'timer'; name: string; durationMs: number; plan: AlertPlan },
+): void {
+  const card = state.timers.find((t) => t.id === cardId) ?? state.notes.find((n) => n.id === cardId)
+  if (!card) return
+  const run = runFor(card)
+  if (step.kind === 'note') appendStep(run.recipe, noteStep(step.text.trim()))
+  else {
+    appendStep(run.recipe, timerStep(tidyName(step.name), step.durationMs, step.plan))
+    rememberTime(state.history, step.name, step.durationMs)
+  }
+  void play('beep', true)
+  tick(true)
+}
+
+/** How many steps follow this card in its chain (0 when it isn't in one, or is the last). */
+export function stepsAfter(card: Timer | Note): number {
+  if (!card.step) return 0
+  const run = runById(card.step.runId)
+  if (!run) return 0
+  const at = run.recipe.steps.findIndex((s) => s.id === card.step?.stepId)
+  return at < 0 ? 0 : run.recipe.steps.length - 1 - at
+}
+
+/** The recipe a card is a step of, and where in it: for the card's context line. */
+export function stepContext(card: Timer | Note): { run: Run; step: Step } | undefined {
+  if (!card.step) return undefined
+  const run = runById(card.step.runId)
+  const step = run && stepById(run.recipe, card.step.stepId)
+  return run && step ? { run, step } : undefined
+}
+
+/** Keep a cooked chain (or the run of a recipe) under a name, for the Prep list. */
+export function saveRecipe(run: Run, name: string): void {
+  state.recipes.push(saveAs(run, tidyName(name)))
+  justFinished.value = null
+  void play('beep', true)
+}
+
+export function removeRecipe(id: string): void {
+  state.recipes = state.recipes.filter((r) => r.id !== id)
+}
+
+/** Prep a recipe: its first step(s) come up, the rest follow as each is done. */
+export function startRecipe(recipe: Recipe): void {
+  const run = runRecipe(recipe)
+  state.runs.push(run)
+  const now = Date.now()
+  for (const id of run.active) {
+    const step = stepById(run.recipe, id)
+    if (step) bringUp(run, step, now, '')
+  }
+  void play('beep', true)
+  tick(true)
 }
 
 export const pauseTimer = (id: string) =>
@@ -252,11 +415,11 @@ export function installStore(): void {
   })
 
   watch(
-    () => [state.timers, state.presets, state.history],
+    () => [state.timers, state.notes, state.runs, state.recipes, state.presets, state.history],
     () => {
       try {
-        const { timers, presets, history } = state
-        localStorage.setItem(STORAGE_KEY, serialise({ timers, presets, history }))
+        const { timers, notes, runs, recipes, presets, history } = state
+        localStorage.setItem(STORAGE_KEY, serialise({ timers, notes, runs, recipes, presets, history }))
       } catch {
         /* storage full or unavailable */
       }

@@ -31,6 +31,9 @@ export type LinePool =
   | 'dueFood' // Sync Finish: this dish should go on now                   {food} {Food} {is} {it} {those}
   | 'dueTask' //                                                          {name}
   | 'dueUnnamed'
+  | 'nextUpFood' // a recipe's next timer step has come up, waiting for Start   {food} {Food} {is} {it} {those} {time}
+  | 'nextUpTask' //                                                            {name} {time}
+  | 'nextUpUnnamed' //                                                         {time}
   | 'synced' // Sync Up & Start was pressed                                {time} (when everything will be ready)
   | 'waitingOne' // the once-a-minute nudge: one thing pending             {food} {Food} {is} {it} {those}
   | 'waitingTwo' //                                                       {food} {Food} {other}
@@ -142,6 +145,23 @@ export const LINES: Record<LinePool, readonly string[]> = {
   ],
   dueTask: ['{name}: start now.', 'Time to start: {name}.', 'Start now: {name}.', 'On with {name} now.'],
   dueUnnamed: ['Time to start the next one.', 'Next one, now.', 'On to the next one.', 'Start the next one now.'],
+  nextUpFood: [
+    'Next up: {food}, {time}. Start {it} when you are ready.',
+    'Then the {food}, {time}. Press start when {it} {is} on.',
+    '{Food} next: {time}. Start {it} when you like.',
+    'Next, {food} for {time}. Whenever you are ready.',
+    'The {food} {is} next. {time}. Start when ready.',
+  ],
+  nextUpTask: [
+    'Next up: {name}, {time}. Start when you are ready.',
+    'Then {name}, {time}. Press start when you like.',
+    '{name} next: {time}. Start when ready.',
+  ],
+  nextUpUnnamed: [
+    'Next up: {time}. Start it when you are ready.',
+    'Then a {time} timer. Press start when you like.',
+    'Next timer: {time}. Start when ready.',
+  ],
   synced: [
     "Synced. Everything's ready in {time}.",
     'All synced up. Ready in {time}.',

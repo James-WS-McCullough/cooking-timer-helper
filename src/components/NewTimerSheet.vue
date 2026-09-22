@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { formatClock, parseDuration, tidyName } from '../lib/format'
 import { NO_ALERTS } from '../lib/timer'
-import { type Preset, savePreset, startPreset, startTimer } from '../store'
+import { addNextStep, type Preset, type Recipe, savePreset, startPreset, startRecipe, startTimer } from '../store'
 import NameStep from './sheet/NameStep.vue'
 import SheetShell from './sheet/SheetShell.vue'
 import { useSteps } from './sheet/steps'
@@ -12,7 +12,8 @@ import TimeStep from './sheet/TimeStep.vue'
 // Alerts are deliberately not part of making a timer: starting one should take two taps.
 // (They're added from the bell on a timer's card: AlertSheet.vue.)
 // `heard`: a name that came from the mic without a time; the wizard opens at "How long?" for it.
-const props = defineProps<{ prep?: boolean; heard?: string }>()
+// `after`: the timer is the next step of that card's recipe, not a timer of its own.
+const props = defineProps<{ prep?: boolean; heard?: string; after?: { id: string; name: string } }>()
 const emit = defineEmits<{ close: [] }>()
 
 // One decision per screen, and most taps move forward on their own.
@@ -42,7 +43,13 @@ function pickName(n: string) {
 }
 
 function onPreset(p: Preset) {
-  startPreset(p, props.prep)
+  if (props.after) addNextStep(props.after.id, { kind: 'timer', name: p.name, durationMs: p.durationMs, plan: p.plan })
+  else startPreset(p, props.prep)
+  emit('close')
+}
+
+function onRecipe(r: Recipe) {
+  startRecipe(r)
   emit('close')
 }
 
@@ -58,7 +65,8 @@ const timeProblem = computed(() =>
 function start(ms: number | null) {
   if (ms === null) return
   if (keepAsPreset.value) savePreset(name.value, ms, NO_ALERTS)
-  startTimer(name.value, ms, NO_ALERTS, props.prep)
+  if (props.after) addNextStep(props.after.id, { kind: 'timer', name: name.value, durationMs: ms, plan: NO_ALERTS })
+  else startTimer(name.value, ms, NO_ALERTS, props.prep)
   emit('close')
 }
 
@@ -78,7 +86,7 @@ function onSubmit() {
     :step="step"
     :direction="direction"
     :can-go-back="step === 'time'"
-    :badge="prep ? 'Prep for later' : undefined"
+    :badge="after ? `After ${after.name}` : prep ? 'Prep for later' : undefined"
     :prep="prep"
     :immersive="step === 'name' && searching"
     @back="back"
@@ -93,6 +101,7 @@ function onSubmit() {
       :prep="prep"
       @pick="pickName"
       @preset="onPreset"
+      @recipe="onRecipe"
     />
     <TimeStep v-else v-model:custom-time="customTime" v-model:keep-as-preset="keepAsPreset" :name="name" :invalid="!!timeProblem" @start="start" />
 
@@ -102,7 +111,7 @@ function onSubmit() {
     <template v-else-if="step === 'time' && customTime.trim()" #foot>
       <p v-if="timeProblem" id="time-problem" class="problem" role="alert">{{ timeProblem }}</p>
       <button type="submit" class="next tabular" :disabled="!!timeProblem">
-        {{ prep ? 'Prep' : 'Start' }}{{ customMs && !timeProblem ? ` ${formatClock(customMs)}` : '' }}
+        {{ after ? 'Add step' : prep ? 'Prep' : 'Start' }}{{ customMs && !timeProblem ? ` ${formatClock(customMs)}` : '' }}
       </button>
     </template>
   </SheetShell>

@@ -3,7 +3,8 @@ import { computed, ref, watch } from 'vue'
 import { FOODS } from '../../data/foods'
 import { searchFoods } from '../../lib/foodSearch'
 import { formatDuration, tidyName } from '../../lib/format'
-import { type Preset, removePreset, state } from '../../store'
+import { type Recipe, totalMs } from '../../lib/recipe'
+import { type Preset, removePreset, removeRecipe, state } from '../../store'
 import FoodIcon from '../FoodIcon.vue'
 
 // "What's cooking?": a search box, the presets, and a grid of the usual names.
@@ -13,7 +14,7 @@ import FoodIcon from '../FoodIcon.vue'
 // The wizard holds this step's state, so it's all still there after a trip to the
 // next screen and back.
 defineProps<{ prep?: boolean }>()
-const emit = defineEmits<{ pick: [name: string]; preset: [preset: Preset] }>()
+const emit = defineEmits<{ pick: [name: string]; preset: [preset: Preset]; recipe: [recipe: Recipe] }>()
 
 const name = defineModel<string>('name', { required: true })
 // Focusing the name box turns the step into a search of the built-in food list.
@@ -56,6 +57,13 @@ function describe(p: Preset): string {
 function onPreset(p: Preset) {
   if (editingPresets.value) return
   emit('preset', p)
+}
+
+// ---- Recipes (prep only): a chain of steps, prepped in one tap ----
+const describeRecipe = (r: Recipe) => `${r.steps.length} steps · ${formatDuration(totalMs(r))}`
+function onRecipe(r: Recipe) {
+  if (editingPresets.value) removeRecipe(r.id)
+  else emit('recipe', r)
 }
 
 // A removed preset is lifted out of the row so its neighbours can slide into the
@@ -104,6 +112,30 @@ watch(
   </div>
 
   <template v-if="!searching">
+    <Transition name="fold">
+      <section v-if="prep && state.recipes.length" class="presets-section recipes-section">
+        <div class="label-row">
+          <h3>Recipes · prep in one tap</h3>
+          <button v-if="!state.presets.length" type="button" class="link" :aria-pressed="editingPresets" @click="editingPresets = !editingPresets">
+            {{ editingPresets ? 'Done' : 'Edit' }}
+          </button>
+        </div>
+        <div class="presets" :class="{ editing: editingPresets }">
+          <div v-for="r in state.recipes" :key="r.id" class="preset-wrap">
+            <button
+              type="button"
+              class="preset recipe"
+              :aria-label="editingPresets ? `Delete recipe ${r.name}` : `Prep ${r.name}: ${describeRecipe(r)}`"
+              @click="onRecipe(r)"
+            >
+              <FoodIcon :name="r.steps.find((s) => s.kind === 'timer')?.name ?? ''" class="preset-icon" />
+              <strong>{{ r.name }}</strong>
+              <span>{{ editingPresets ? 'Tap to delete' : describeRecipe(r) }}</span>
+            </button>
+          </div>
+        </div>
+      </section>
+    </Transition>
     <Transition name="fold">
       <section v-if="state.presets.length" class="presets-section">
         <div class="label-row">
@@ -395,6 +427,19 @@ watch(
 .preset span {
   font-size: 0.85rem;
   color: var(--text-dim);
+}
+
+/* A recipe preps a set of steps: dashed, in the prep colour, like the Prep button. */
+.preset.recipe {
+  border: 2px dashed var(--prep-line);
+  background: color-mix(in srgb, var(--prep) 10%, var(--bg));
+}
+
+.editing .preset.recipe {
+  opacity: 1;
+  animation: none;
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 /* Edit mode: pills keep their size (nothing jumps), fade back, and jiggle a little

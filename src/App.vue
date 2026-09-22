@@ -3,6 +3,9 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch 
 import AlertSheet from './components/AlertSheet.vue'
 import MicIcon from './components/MicIcon.vue'
 import NewTimerSheet from './components/NewTimerSheet.vue'
+import NextStepSheet from './components/NextStepSheet.vue'
+import NoteCard from './components/NoteCard.vue'
+import SaveRecipeSheet from './components/SaveRecipeSheet.vue'
 import SettingsSheet from './components/SettingsSheet.vue'
 import SizzleLogo from './components/SizzleLogo.vue'
 import SyncSheet from './components/SyncSheet.vue'
@@ -13,12 +16,30 @@ import VoiceButton from './components/VoiceButton.vue'
 import { announcement } from './lib/announce'
 import { play, soundReady } from './lib/audio'
 import { dialogOpen } from './lib/dialog'
+import { isNote } from './lib/recipe'
 import { theme, toggleTheme } from './lib/theme'
 import { anyPausedByAll, countingTimers, displayOrder, isPending, statusOf, syncable } from './lib/timer'
-import { pauseEverything, resumeEverything, state } from './store'
+import { arrivals, justFinished, pauseEverything, resumeEverything, state } from './store'
 
 // Which wizard is open, if any: start a timer now, or prep one for later.
 const sheet = ref<'start' | 'prep' | null>(null)
+
+// The list: timers, and the instruction cards of recipes in progress.
+const cards = computed(() => [...state.timers, ...state.notes])
+
+// "+ Next step" on a card: which card, then (for a timer step) the wizard with `after` set.
+const nextFor = ref<{ id: string; name: string } | null>(null)
+const after = ref<{ id: string; name: string }>()
+function openNext(id: string, name: string) {
+  void play('beep', true)
+  nextFor.value = { id, name }
+}
+function nextIsTimer() {
+  after.value = nextFor.value ?? undefined
+  nextFor.value = null
+  heardName.value = undefined
+  sheet.value = 'start'
+}
 
 // The mic: say a timer instead of tapping it in. If it hears a name but no time, the
 // wizard opens at "How long?" with that name. Loaded on demand, like everything about it.
@@ -49,7 +70,9 @@ const settingsOpen = ref(false)
 // big button always means "carry on with what I'm doing", so here it preps another
 // and starting a live timer becomes the small, deliberate option. It stays
 // available (kettle, par-boil…); it just shouldn't be what a thumb lands on.
-const prepping = computed(() => state.timers.length > 0 && state.timers.every((t) => statusOf(t) === 'prepped'))
+const prepping = computed(
+  () => state.timers.length > 0 && !state.notes.length && state.timers.every((t) => statusOf(t) === 'prepped'),
+)
 
 // Sync Finish is only worth offering once there's more than one dish to line up.
 const canSync = computed(() => syncable(state.timers).length >= 2)
@@ -88,6 +111,7 @@ function openAlerts(id: string) {
 function openSheet(mode: 'start' | 'prep' = 'start') {
   void play('beep', true)
   heardName.value = undefined
+  after.value = undefined
   sheet.value = mode
 }
 
@@ -107,7 +131,7 @@ watch(
   () => state.now,
   (now) => {
     if (now < idleAt) return
-    const next = displayOrder(state.timers, now).map((t) => t.id)
+    const next = displayOrder(cards.value, now).map((c) => c.id)
     if (next.join() !== shownOrder.value.join()) shownOrder.value = next
   },
   { immediate: true },
@@ -116,8 +140,24 @@ watch(
 // Timers added while the order is held simply join the end until the next re-sort.
 const ordered = computed(() => {
   const place = new Map(shownOrder.value.map((id, i) => [id, i]))
-  return [...state.timers].sort((a, b) => (place.get(a.id) ?? Infinity) - (place.get(b.id) ?? Infinity))
+  return [...cards.value].sort((a, b) => (place.get(a.id) ?? Infinity) - (place.get(b.id) ?? Infinity))
 })
+
+// A recipe's next step takes the place of the step just done: the card becomes the next
+// one, rather than the next one turning up at the bottom.
+watch(
+  () => arrivals.value.length,
+  (n) => {
+    if (!n) return
+    const order = [...shownOrder.value]
+    for (const { id, inPlaceOf } of arrivals.value.splice(0)) {
+      const at = order.indexOf(inPlaceOf)
+      order.splice(at < 0 ? order.length : at + 1, 0, id)
+    }
+    shownOrder.value = order
+    holdOrder()
+  },
+)
 
 // A card that's leaving is lifted out of the grid (so its neighbours can glide
 // up), which would normally make it jump to the grid's corner. Pin it where it was.
@@ -144,7 +184,7 @@ function afterLeave() {
 }
 
 // After a reload the browser won't play anything until the first tap.
-const needsSoundTap = computed(() => !soundReady.value && state.timers.length > 0)
+const needsSoundTap = computed(() => !soundReady.value && cards.value.length > 0)
 
 function onKey(e: KeyboardEvent) {
   const typing = e.target instanceof HTMLInputElement
@@ -169,12 +209,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <div class="sr-only" role="status" aria-live="polite">{{ announcement.urgent ? '' : announcement.text }}</div>
     <div class="sr-only" role="alert">{{ announcement.urgent ? announcement.text : '' }}</div>
     <UpdateToast />
-    <VoiceBubble v-if="state.timers.length" />
+    <VoiceBubble v-if="cards.length" />
 
     <!-- A slim strip above the list, scrolling with it: a gear pinned to the corner would end up
          sitting on whichever card's bell and ✕ scrolled underneath it. Sizzle's speech bubble
          drops into this strip too, instead of over the first card. -->
-    <div v-if="state.timers.length" class="topbar">
+    <div v-if="cards.length" class="topbar">
       <h1 class="sr-only">Sizzle timers</h1>
       <button class="gear" aria-label="Settings" @click="settingsOpen = true">
         <!-- Sliders, not a cog: at this size a cog reads as the theme toggle's sun. -->
@@ -202,7 +242,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </button>
     </Transition>
 
-    <main :class="{ 'has-timers': state.timers.length > 0, 'with-sync': canSync }">
+    <main :class="{ 'has-timers': cards.length > 0, 'with-sync': canSync }">
       <TransitionGroup
         ref="grid"
         name="cards"
@@ -212,12 +252,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         @before-leave="pinInPlace"
         @after-leave="afterLeave"
       >
-        <TimerCard v-for="t in ordered" :key="t.id" :timer="t" :now="state.now" :pulse="state.pulse" @alerts="openAlerts(t.id)" />
+        <template v-for="c in ordered" :key="c.id">
+          <NoteCard v-if="isNote(c)" :note="c" @next="openNext(c.id, c.text)" />
+          <TimerCard v-else :timer="c" :now="state.now" :pulse="state.pulse" @alerts="openAlerts(c.id)" @next="openNext(c.id, c.name || 'the timer')" />
+        </template>
       </TransitionGroup>
 
       <!-- Nothing cooking: the way in is the whole screen -->
       <Transition name="welcome">
-        <div v-if="!state.timers.length" class="welcome">
+        <div v-if="!cards.length" class="welcome">
           <SizzleLogo class="logo" />
           <h1>Sizzle</h1>
           <div class="start-row">
@@ -254,7 +297,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </Transition>
 
     <Transition name="dock">
-      <div v-if="state.timers.length" class="dock">
+      <div v-if="cards.length" class="dock">
         <Transition name="sync">
           <button v-if="canSync" class="sync" @click="openSync">
             <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
@@ -283,11 +326,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
     <!-- Outside the start screen's own transition: a transformed parent would drag a fixed child around. -->
     <Transition name="welcome">
-      <VoiceButton v-if="!state.timers.length" />
+      <VoiceButton v-if="!cards.length" />
     </Transition>
     <Transition name="welcome">
       <button
-        v-if="!state.timers.length"
+        v-if="!cards.length"
         class="corner-button theme-button"
         :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
         @click="toggleTheme"
@@ -303,7 +346,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </button>
     </Transition>
     <Transition name="welcome">
-      <button v-if="!state.timers.length" class="corner-button qr-button" aria-label="Show a QR code to open Sizzle on another device" @click="qrOpen = true">
+      <button v-if="!cards.length" class="corner-button qr-button" aria-label="Show a QR code to open Sizzle on another device" @click="qrOpen = true">
         <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
           <rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1" />
           <rect x="14" y="3.5" width="6.5" height="6.5" rx="1" />
@@ -315,10 +358,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
     <SyncSheet v-if="syncOpen && canSync" @close="syncOpen = false" />
     <ListenSheet v-else-if="micOpen" @close="micOpen = false" @time="askHowLong" />
-    <NewTimerSheet v-else-if="sheet" :prep="sheet === 'prep'" :heard="heardName" @close="sheet = null" />
+    <NextStepSheet v-else-if="nextFor" :card-id="nextFor.id" :card-name="nextFor.name" @close="nextFor = null" @timer="nextIsTimer" />
+    <NewTimerSheet v-else-if="sheet" :prep="sheet === 'prep'" :heard="heardName" :after="after" @close="sheet = null" />
     <AlertSheet v-else-if="alertsFor" :key="alertsFor.id" :timer="alertsFor" @close="alertsForId = null" />
     <SettingsSheet v-if="settingsOpen" @close="settingsOpen = false" @qr="((settingsOpen = false), (qrOpen = true))" />
     <QrSheet v-if="qrOpen" @close="qrOpen = false" />
+    <SaveRecipeSheet v-if="justFinished" :run="justFinished" @close="justFinished = null" />
   </div>
 </template>
 

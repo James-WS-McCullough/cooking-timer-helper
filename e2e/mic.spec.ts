@@ -104,6 +104,38 @@ test("nothing usable: it says so and offers another go; the wrong guess isn't st
   await expect(page.locator('.card')).toHaveCount(0)
 })
 
+test('a saved recipe by name preps the whole chain', async ({ page }) => {
+  await page.addInitScript(() => {
+    const step = {
+      id: 's1',
+      kind: 'timer',
+      name: 'Veg',
+      durationMs: 300_000,
+      plan: { kind: 'none', everyMs: 0, label: 'Flip', pause: false },
+      after: [],
+    }
+    const note = { id: 's2', kind: 'note', text: 'Serve', after: ['s1'] }
+    localStorage.setItem(
+      'sizzle:v1',
+      JSON.stringify({
+        version: 3,
+        timers: [],
+        notes: [],
+        runs: [],
+        presets: [],
+        history: {},
+        recipes: [{ id: 'r', name: 'Stir fry', steps: [step, note] }],
+      }),
+    )
+  })
+  await page.reload()
+  await hears(page, 'Prep the stir fry.')
+  const sheet = await say(page)
+  await expect(sheet).toBeHidden()
+  await expect(page.locator('.card')).toContainText('Veg')
+  await expect(page.locator('.card')).toContainText('Ready to start')
+})
+
 test("if the speech model can't be loaded it says so", async ({ page }) => {
   await hears(page, new Error('offline'))
   await page.getByRole('button', { name: 'Say a timer' }).click()

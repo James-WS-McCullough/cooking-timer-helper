@@ -82,7 +82,12 @@ export function fill(template: string, { name = '', other = '', verb = '', ms = 
   return capital(template.replace(/\{(\w+)\}/g, (whole, key: string) => values[key] ?? whole))
 }
 
-function line(stem: 'started' | 'finished' | 'alert' | 'due', timer: Timer, random: Random, extra: Fill = {}): string {
+function line(
+  stem: 'started' | 'finished' | 'alert' | 'due' | 'nextUp',
+  timer: Timer,
+  random: Random,
+  extra: Fill = {},
+): string {
   const name = timer.name
   const pool = `${stem}${kindOf(name)}` as LinePool
   const noCooking = DRINK.test(name) ? (l: string) => !/cook/i.test(l) : undefined
@@ -93,6 +98,8 @@ export const greeting = (first: boolean, random: Random = Math.random) => pick(f
 export const startedPhrase = (timer: Timer, random: Random = Math.random) => line('started', timer, random)
 export const finishedPhrase = (timer: Timer, random: Random = Math.random) => line('finished', timer, random)
 export const duePhrase = (timer: Timer, random: Random = Math.random) => line('due', timer, random)
+/** A recipe's next timer step is on screen, waiting for its Start. */
+export const nextUpPhrase = (timer: Timer, random: Random = Math.random) => line('nextUp', timer, random)
 
 /** A mid-way alert. The label is already an imperative (Flip, Stir, Check, Baste). */
 export const alertPhrase = (timer: Timer, label: string, random: Random = Math.random) =>

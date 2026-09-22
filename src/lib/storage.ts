@@ -3,7 +3,10 @@
 // presets should survive any update.
 
 import type { TimeHistory } from './history'
+import type { Note, Recipe, Run } from './recipe'
 import { type AlertPlan, NO_ALERTS, type Timer } from './timer'
+
+export type { Note } from './recipe'
 
 export interface Preset {
   id: string
@@ -15,6 +18,9 @@ export interface Preset {
 export interface Saved {
   version: number
   timers: Timer[]
+  notes: Note[]
+  runs: Run[]
+  recipes: Recipe[]
   presets: Preset[]
   history: TimeHistory
 }
@@ -27,8 +33,9 @@ export const STORAGE_KEY = 'sizzle:v1'
  * over, and add a step to MIGRATIONS that upgrades the previous version.
  *   1: timers + presets (no version field)
  *   2: + history; timers may carry prepped / sync fields; every timer and preset has a plan
+ *   3: + notes, runs, recipes (chains of steps); a timer may carry a step ref
  */
-export const CURRENT_VERSION = 2
+export const CURRENT_VERSION = 3
 
 type Loose = Record<string, unknown>
 
@@ -43,15 +50,30 @@ const MIGRATIONS: Record<number, (data: Loose) => void> = {
       timer.prepped ??= false
     }
   },
+  2: (data) => {
+    data.notes = []
+    data.runs = []
+    data.recipes = []
+  },
 }
 
 const isRecord = (value: unknown): value is Loose =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 const usable = (item: unknown): item is Loose =>
   isRecord(item) && typeof item.id === 'string' && typeof item.durationMs === 'number' && item.durationMs > 0
+const usableNote = (item: unknown): item is Loose =>
+  isRecord(item) && typeof item.id === 'string' && typeof item.text === 'string' && isRecord(item.step)
+const usableRecipe = (item: unknown): item is Loose =>
+  isRecord(item) && typeof item.id === 'string' && Array.isArray(item.steps) && item.steps.every(isRecord)
+const usableRun = (item: unknown): item is Loose =>
+  isRecord(item) &&
+  typeof item.id === 'string' &&
+  usableRecipe(item.recipe) &&
+  Array.isArray(item.done) &&
+  Array.isArray(item.active)
 
 export function emptySaved(): Saved {
-  return { version: CURRENT_VERSION, timers: [], presets: [], history: {} }
+  return { version: CURRENT_VERSION, timers: [], notes: [], runs: [], recipes: [], presets: [], history: {} }
 }
 
 export function parseSaved(raw: string | null): Saved {
@@ -67,6 +89,9 @@ export function parseSaved(raw: string | null): Saved {
   // Anything that isn't a recognisable timer or preset is dropped on its own, not with the rest.
   data.timers = Array.isArray(data.timers) ? data.timers.filter(usable) : []
   data.presets = Array.isArray(data.presets) ? data.presets.filter(usable) : []
+  data.notes = Array.isArray(data.notes) ? data.notes.filter(usableNote) : []
+  data.recipes = Array.isArray(data.recipes) ? data.recipes.filter(usableRecipe) : []
+  data.runs = Array.isArray(data.runs) ? data.runs.filter(usableRun) : []
 
   let version = typeof data.version === 'number' ? data.version : 1
   while (version < CURRENT_VERSION) {
@@ -78,6 +103,9 @@ export function parseSaved(raw: string | null): Saved {
     // Written by a newer Sizzle (say, another tab mid-update): keep its version so we don't claim to have downgraded it.
     version: Math.max(version, CURRENT_VERSION),
     timers: data.timers as Timer[],
+    notes: data.notes as Note[],
+    runs: data.runs as Run[],
+    recipes: data.recipes as Recipe[],
     presets: data.presets as Preset[],
     history: isRecord(data.history) ? (data.history as TimeHistory) : {},
   }

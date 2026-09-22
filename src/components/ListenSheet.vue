@@ -5,12 +5,13 @@
 // Heard a name but no time? The wizard takes over at "How long?".
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDialog } from '../lib/dialog'
+import { normalise } from '../lib/foodSearch'
 import { formatClock } from '../lib/format'
 import { finishListening, ListenError, listen, mic, micReady, stopListening } from '../lib/listen'
 import { speechModel } from '../lib/listen/models'
 import { parseSpoken, type Spoken } from '../lib/spoken'
 import { NO_ALERTS } from '../lib/timer'
-import { startTimer } from '../store'
+import { startRecipe, startTimer, state } from '../store'
 import FoodIcon from './FoodIcon.vue'
 import MicIcon from './MicIcon.vue'
 
@@ -45,6 +46,13 @@ async function hear() {
     if (text === null) return // called off
     heard.value = text
     const spoken = parseSpoken(text)
+    // A saved recipe by name ("prep the stir fry"): the whole chain, whether or not they said prep.
+    const recipe = spoken.name && state.recipes.find((r) => normalise(r.name) === normalise(spoken.name))
+    if (recipe) {
+      startRecipe(recipe)
+      emit('close')
+      return
+    }
     if (spoken.durationMs !== null) {
       result.value = { ...spoken, durationMs: spoken.durationMs }
       view.value = 'result'

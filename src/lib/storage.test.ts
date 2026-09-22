@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CURRENT_VERSION, parseSaved, serialise } from './storage'
+import { CURRENT_VERSION, emptySaved, parseSaved, serialise } from './storage'
 import { createTimer, NO_ALERTS } from './timer'
 
 const MIN = 60_000
@@ -7,7 +7,7 @@ const MIN = 60_000
 describe('parseSaved', () => {
   it('starts empty for nothing, junk, or the wrong shape', () => {
     for (const raw of [null, '', 'not json', '[]', '42', '{"timers":"nope"}']) {
-      expect(parseSaved(raw)).toEqual({ version: CURRENT_VERSION, timers: [], presets: [], history: {} })
+      expect(parseSaved(raw)).toEqual(emptySaved())
     }
   })
 
@@ -53,12 +53,47 @@ describe('parseSaved', () => {
     ]
     const presets = [{ id: 'p1', name: 'Rice', durationMs: 12 * MIN, plan: NO_ALERTS }]
     const history = { potatoes: [40 * MIN] }
-    expect(parseSaved(serialise({ timers, presets, history }))).toEqual({
+    expect(parseSaved(serialise({ timers, notes: [], runs: [], recipes: [], presets, history }))).toEqual({
       version: CURRENT_VERSION,
       timers,
+      notes: [],
+      runs: [],
+      recipes: [],
       presets,
       history,
     })
+  })
+
+  it('upgrades version 2 data (before recipes) and keeps a chain mid-cook', () => {
+    const v2 = {
+      version: 2,
+      timers: [],
+      presets: [{ id: 'p', name: 'Rice', durationMs: MIN, plan: NO_ALERTS }],
+      history: {},
+    }
+    const up = parseSaved(JSON.stringify(v2))
+    expect(up.version).toBe(CURRENT_VERSION)
+    expect(up.presets).toHaveLength(1)
+    expect(up).toMatchObject({ notes: [], runs: [], recipes: [] })
+
+    const step = { id: 's1', kind: 'note' as const, text: 'Drain', after: [] }
+    const run = { id: 'run', recipe: { id: 'r', name: '', steps: [step] }, done: [], active: ['s1'] }
+    const note = { id: 'n', text: 'Drain', createdAt: 1, step: { runId: 'run', stepId: 's1' } }
+    const saved = parseSaved(
+      serialise({ timers: [], notes: [note], runs: [run], recipes: [], presets: [], history: {} }),
+    )
+    expect(saved.runs).toEqual([run])
+    expect(saved.notes).toEqual([note])
+    // junk in the new lists goes, on its own
+    const junk = JSON.stringify({
+      version: 3,
+      timers: [],
+      notes: [{ id: 'x' }, note],
+      runs: [{}],
+      recipes: [{ id: 'r', steps: 'no' }],
+      presets: [],
+    })
+    expect(parseSaved(junk)).toMatchObject({ notes: [note], runs: [], recipes: [] })
   })
 
   it('does not pretend to downgrade data from a newer version', () => {

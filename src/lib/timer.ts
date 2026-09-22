@@ -1,6 +1,8 @@
 // Pure timer engine. Everything is derived from wall-clock timestamps rather
 // than counted ticks, so timers stay correct through sleep, backgrounding and reloads.
 
+import { isNote, type Note, type StepRef } from './recipe'
+
 export type AlertKind = 'none' | 'half' | 'every'
 
 export interface AlertPlan {
@@ -37,6 +39,7 @@ export interface Timer {
   startAt?: number | null
   due?: boolean // pre-timer has run out; waiting for that confirmation
   waitLeftMs?: number | null // pre-timer frozen by Pause all, with this much still to go
+  step?: StepRef // one step of a recipe being cooked (recipe.ts); Done brings up the next
 }
 
 export type TimerStatus = 'prepped' | 'waiting' | 'due' | 'running' | 'paused' | 'alert' | 'finished'
@@ -222,9 +225,9 @@ export function isPending(t: Timer): boolean {
 
 // ---- Sync Finish ----
 
-/** Prepped timers that haven't been given a start time yet: the ones Sync Finish works on. */
+/** Prepped timers that haven't been given a start time yet: the ones Sync Finish works on. A recipe step isn't: its recipe decides when it goes on. */
 export function syncable(timers: Timer[]): Timer[] {
-  return timers.filter((t) => statusOf(t) === 'prepped')
+  return timers.filter((t) => statusOf(t) === 'prepped' && !t.step)
 }
 
 /**
@@ -301,15 +304,23 @@ export function resumeAll(timers: Timer[], now: number): void {
   }
 }
 
+/** Anything in the list: a timer, or an instruction from a recipe. */
+export type Card = Timer | Note
+
 /**
- * Display order: whatever needs hands first, then whatever is ready soonest,
+ * Display order: whatever needs hands first (a finished timer; a flip, a synced dish or a
+ * recipe's next step to put on, an instruction to follow), then whatever is ready soonest,
  * then synced timers by when they go on, then prepped timers in the order they were set up.
  * Running timers all drain at the same rate, so this only changes on real
  * events (time added, pause, an alert firing).
  */
-export function displayOrder(timers: Timer[], now: number): Timer[] {
-  const rank = (t: Timer) =>
-    ({ finished: 0, alert: 1, due: 1, running: 2, paused: 2, waiting: 3, prepped: 4 })[statusOf(t)]
-  const left = (t: Timer) => (t.prepped ? (t.startAt ?? 0) : remainingMs(t, now))
-  return [...timers].sort((a, b) => rank(a) - rank(b) || left(a) - left(b) || a.createdAt - b.createdAt)
+export function displayOrder<C extends Card>(cards: C[], now: number): C[] {
+  const rank = (c: Card) => {
+    if (isNote(c)) return 1
+    const status = statusOf(c)
+    if (status === 'prepped' && c.step) return 1
+    return { finished: 0, alert: 1, due: 1, running: 2, paused: 2, waiting: 3, prepped: 4 }[status]
+  }
+  const left = (c: Card) => (isNote(c) ? 0 : c.prepped ? (c.startAt ?? 0) : remainingMs(c, now))
+  return [...cards].sort((a, b) => rank(a) - rank(b) || left(a) - left(b) || a.createdAt - b.createdAt)
 }

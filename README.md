@@ -106,6 +106,12 @@ Sizzle is also a character: a small round robot in a chef's hat, bottom-left of 
 - **What enabling downloads (once, about 95 MB):** Alba's model (63 MB, from Hugging Face, kept in the browser's private storage) and the runtime (ONNX Runtime + the eSpeak NG phonemiser, 33 MB). The runtime is **hosted by Sizzle itself** at `/voice/`: `vite.config.ts` serves it from `node_modules` in dev and copies it into `dist/voice/` at build, so it's version-pinned by the lockfile, never committed, and cached by the service worker on first use. Nothing voice-related loads until she's turned on.
 - `npm run lab` opens a dev-only playground (`lab/voice/`) for the voice and face: type anything, change pitch and speed while she loops.
 
+## Recipes: steps that follow one another
+
+The list-plus button on a card (beside the bell) adds the next step of a recipe: **an instruction** ("Move the veg to a bowl and cover") or **a timer** (the next thing to cook). Steps go on the end of that card's chain, and nothing else appears until it's their turn: when a timer finishes and you press Done, the next step takes its place on screen. An instruction is a card with the words and one Done; a timer step arrives ready, and starts when you press Start, like any prepped timer. Sizzle reads instructions aloud if her voice is on. A chain isn't Sync Finish material (the recipe decides when each thing goes on), and ✕ on any of its cards removes the whole chain.
+
+When a chain you built while cooking is done, Sizzle asks whether to keep it as a recipe. Recipes live at the top of the **Prep** screen, one tap to set the first step going, and the mic starts one by name ("prep the stir fry"). The quick New timer path is untouched. Under the hood a recipe is a small graph (each step says what it comes after), so forks and joins are a matter of UI to come; today every chain is linear.
+
 ## Saying a timer
 
 The round mic button beside New timer (start screen and dock) makes a timer from speech: "rice, 10 minutes", "turkey, two hours thirty", "prepare the lamb, an hour and a half".

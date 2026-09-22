@@ -12,11 +12,29 @@ import {
   waitProgress,
   waitRemainingMs,
 } from '../lib/timer'
-import { acknowledgeTimer, completeTimer, extendTimer, pauseTimer, removeTimer, resumeTimer } from '../store'
+import {
+  acknowledgeTimer,
+  completeTimer,
+  extendTimer,
+  pauseTimer,
+  removeRun,
+  removeTimer,
+  resumeTimer,
+  stepsAfter,
+} from '../store'
 import FoodIcon from './FoodIcon.vue'
+import NextStepButton from './NextStepButton.vue'
 
 const props = defineProps<{ timer: Timer; now: number; pulse: number }>()
-const emit = defineEmits<{ alerts: [] }>()
+const emit = defineEmits<{ alerts: []; next: [] }>()
+
+// In a recipe: how many steps follow; ✕ then takes the whole chain with it.
+const following = computed(() => stepsAfter(props.timer))
+const inRecipe = computed(() => !!props.timer.step)
+function remove() {
+  if (props.timer.step) removeRun(props.timer.step.runId)
+  else removeTimer(props.timer.id)
+}
 
 const hasAlerts = computed(() => props.timer.plan.kind !== 'none')
 
@@ -142,6 +160,7 @@ onBeforeUnmount(() => {
             <path d="M10 19.5a2.2 2.2 0 0 0 4 0" fill="none" />
           </svg>
         </button>
+        <NextStepButton :name="title" :following="following" @click="emit('next')" />
         <button class="remove" :aria-label="`Remove ${title}`" @click="confirming = true">✕</button>
       </header>
 
@@ -178,8 +197,8 @@ onBeforeUnmount(() => {
 
       <!-- "Are you sure?", as a little modal over this card only -->
       <Transition name="confirm">
-        <div v-if="confirming" ref="confirmBox" class="confirm" role="alertdialog" aria-modal="true" :aria-label="`Remove ${title}?`">
-          <button ref="confirmButton" class="confirm-button" :aria-label="`Remove ${title}`" @click="removeTimer(timer.id)">Remove</button>
+        <div v-if="confirming" ref="confirmBox" class="confirm" role="alertdialog" aria-modal="true" :aria-label="inRecipe ? `Remove ${title} and the steps with it?` : `Remove ${title}?`">
+          <button ref="confirmButton" class="confirm-button" :aria-label="`Remove ${title}`" @click="remove">{{ inRecipe ? 'Remove all' : 'Remove' }}</button>
         </div>
       </Transition>
 
