@@ -13,10 +13,17 @@ async function addInstruction(page: import('@playwright/test').Page, after: stri
   await expect(sheet(page)).toBeHidden()
 }
 
-async function addTimerStep(page: import('@playwright/test').Page, after: string, name: string, minutes: number) {
+async function addTimerStep(
+  page: import('@playwright/test').Page,
+  after: string,
+  name: string,
+  minutes: number,
+  follows = after,
+) {
   await page.getByRole('button', { name: new RegExp(`step(s)? after ${after}`) }).click()
+  await expect(sheet(page).getByText(`After ${follows}`)).toBeVisible() // names the chain's end, not the card
   await sheet(page).getByRole('button', { name: 'A timer' }).click()
-  await expect(sheet(page).getByText(`After ${after}`)).toBeVisible() // the ordinary wizard, in "next step" mode
+  await expect(sheet(page).getByText(`After ${follows}`)).toBeVisible() // the ordinary wizard, in "next step" mode
   await sheet(page).getByRole('button', { name, exact: true }).click()
   await sheet(page)
     .getByRole('button', { name: String(minutes), exact: true })
@@ -29,7 +36,7 @@ test('steps follow one another, each in the place of the last, and the chain can
   await page.goto('/')
   await startTimer(page, 'Veg', 5)
   await addInstruction(page, 'Veg', 'Move the veg to a bowl')
-  await addTimerStep(page, 'Veg', 'Chicken', 8) // goes on the end of the chain, after the instruction
+  await addTimerStep(page, 'Veg', 'Chicken', 8, 'Move the veg to a bowl') // goes on the end of the chain, after the instruction
   const nextButton = card(page, 'Veg').getByRole('button', { name: /steps after Veg: 2 so far/ })
   await expect(nextButton).toBeVisible()
   await expect(page.locator('.card')).toHaveCount(1) // nothing else on screen yet

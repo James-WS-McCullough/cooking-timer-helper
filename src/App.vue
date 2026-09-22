@@ -19,7 +19,7 @@ import { dialogOpen } from './lib/dialog'
 import { isNote } from './lib/recipe'
 import { theme, toggleTheme } from './lib/theme'
 import { anyPausedByAll, countingTimers, displayOrder, isPending, statusOf, syncable } from './lib/timer'
-import { arrivals, justFinished, pauseEverything, resumeEverything, state } from './store'
+import { arrivals, chainEnd, justFinished, pauseEverything, resumeEverything, state } from './store'
 
 // Which wizard is open, if any: start a timer now, or prep one for later.
 const sheet = ref<'start' | 'prep' | null>(null)
@@ -30,9 +30,10 @@ const cards = computed(() => [...state.timers, ...state.notes])
 // "+ Next step" on a card: which card, then (for a timer step) the wizard with `after` set.
 const nextFor = ref<{ id: string; name: string } | null>(null)
 const after = ref<{ id: string; name: string }>()
-function openNext(id: string, name: string) {
+function openNext(id: string) {
   void play('beep', true)
-  nextFor.value = { id, name }
+  const card = cards.value.find((c) => c.id === id)
+  if (card) nextFor.value = { id, name: chainEnd(card) } // the sheet says what the new step follows
 }
 function nextIsTimer() {
   after.value = nextFor.value ?? undefined
@@ -253,8 +254,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         @after-leave="afterLeave"
       >
         <template v-for="c in ordered" :key="c.id">
-          <NoteCard v-if="isNote(c)" :note="c" @next="openNext(c.id, c.text)" />
-          <TimerCard v-else :timer="c" :now="state.now" :pulse="state.pulse" @alerts="openAlerts(c.id)" @next="openNext(c.id, c.name || 'the timer')" />
+          <NoteCard v-if="isNote(c)" :note="c" @next="openNext(c.id)" />
+          <TimerCard v-else :timer="c" :now="state.now" :pulse="state.pulse" @alerts="openAlerts(c.id)" @next="openNext(c.id)" />
         </template>
       </TransitionGroup>
 

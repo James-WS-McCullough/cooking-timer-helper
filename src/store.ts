@@ -6,6 +6,7 @@ import { rememberTime } from './lib/history'
 import {
   appendStep,
   completeStep,
+  isNote,
   type Note,
   noteStep,
   type Recipe,
@@ -17,6 +18,7 @@ import {
   saveAs,
   startRun,
   stepById,
+  tails,
   timerStep,
 } from './lib/recipe'
 import { type Preset, parseSaved, STORAGE_KEY, serialise } from './lib/storage'
@@ -339,6 +341,16 @@ export function stepsAfter(card: Timer | Note): number {
   if (!run) return 0
   const at = run.recipe.steps.findIndex((s) => s.id === card.step?.stepId)
   return at < 0 ? 0 : run.recipe.steps.length - 1 - at
+}
+
+/** What a new step would come after: the last step of the card's chain (the card itself if nothing follows yet). */
+export function chainEnd(card: Timer | Note): string {
+  const own = isNote(card) ? card.text : card.name || 'the timer'
+  if (!card.step) return own
+  const run = runById(card.step.runId)
+  const last = run && tails(run.recipe)[0]
+  if (!last) return own
+  return last.kind === 'note' ? last.text : last.name || 'the timer'
 }
 
 /** The recipe a card is a step of, and where in it: for the card's context line. */
