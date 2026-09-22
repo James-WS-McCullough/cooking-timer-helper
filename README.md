@@ -74,7 +74,7 @@ Pending cards shimmer each time `Notify` or `Timer Complete` plays.
 
 ## Icons
 
-Food icons are [Fluent Emoji](https://github.com/microsoft/fluentui-emoji) (flat style, MIT © Microsoft), pulled in through `unplugin-icons` so only the ones imported in `src/components/FoodIcon.vue` ship.
+Food icons are [Fluent Emoji](https://github.com/microsoft/fluentui-emoji) (flat style, MIT © Microsoft), pulled in through `unplugin-icons` so only the ones imported in `src/components/foodIconSet.ts` ship, as a chunk of their own that loads after the first screen is up.
 
 - `src/data/foods.ts` is the searchable list in the wizard: `[name, icon, extra search words?]`, British names first with other spellings as extra words. Add a line to add a food.
 - `src/lib/foodIcons.ts` decides which icon a timer name gets: the list's icon if the name is in it, otherwise keyword rules so typed names work too ("Wedges" → potato).

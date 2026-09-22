@@ -153,7 +153,13 @@ function onKey(e: KeyboardEvent) {
     openSheet(e.key === 'p' ? 'prep' : 'start')
   }
 }
-onMounted(() => window.addEventListener('keydown', onKey))
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  // The food icons are half the app's code and the start screen has no use for them, so they're
+  // their own chunk (FoodIcon.vue). Fetch it once the screen is up, before the first tap needs it.
+  const idle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 300))
+  idle(() => void import('./components/foodIconSet'))
+})
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 

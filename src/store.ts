@@ -87,9 +87,15 @@ function announceByVoice(t: Timer, event: TimerEvent): void {
   delete chosen.get(t.id)?.[event] // said; if it comes round again (+30s), she'll say something new
 }
 
-function tick(): void {
+/**
+ * Advance the world. The cards show whole seconds, so that's how often they're told the
+ * time: the 250ms interval still catches alerts promptly, but eight cards re-laying out
+ * four times a second was most of the app's idle cost. An action that has just changed a
+ * timer passes `publish`, so its card reads the time the change was made against.
+ */
+function tick(publish = false): void {
   const now = Date.now()
-  state.now = now
+  if (publish || Math.floor(now / 1000) !== Math.floor(state.now / 1000)) state.now = now
 
   let arrived: TimerEvent | null = null
   for (const t of state.timers) {
@@ -129,7 +135,7 @@ export function startTimer(name: string, durationMs: number, plan: AlertPlan, pr
   rememberTime(state.history, name, durationMs)
   announce(`${titleOf(timer)}, ${formatDuration(durationMs)}, ${prepped ? 'prepped' : 'started'}`)
   void play(prepped ? 'beep' : 'start', true)
-  tick()
+  tick(true)
 }
 
 export function startPreset(preset: Preset, prepped = false): void {
@@ -140,14 +146,14 @@ export function pauseEverything(): void {
   pauseAll(state.timers, Date.now())
   announce('All timers paused')
   void play('beep', true)
-  tick()
+  tick(true)
 }
 
 export function resumeEverything(): void {
   resumeAll(state.timers, Date.now())
   announce('All timers resumed')
   void play('start', true)
-  tick()
+  tick(true)
 }
 
 /** Sync Finish: longest prepped timer starts now, the rest get pre-timers so everything lands together. */
@@ -159,7 +165,7 @@ export function syncAndStart(): void {
     SPEAK_AFTER_SFX_MS,
   )
   void play('start', true)
-  tick()
+  tick(true)
 }
 
 export function savePreset(name: string, durationMs: number, plan: AlertPlan): void {
@@ -181,14 +187,14 @@ export function removePreset(id: string): void {
 export function removeTimer(id: string): void {
   chosen.delete(id)
   state.timers = state.timers.filter((t) => t.id !== id)
-  tick()
+  tick(true)
 }
 
 function withTimer(id: string, fn: (t: Timer, now: number) => void): void {
   const t = state.timers.find((x) => x.id === id)
   if (!t) return
   fn(t, Date.now())
-  tick()
+  tick(true)
 }
 
 /** "Done" on a flip: back to cooking. If the alert was holding the clock, it starts counting again. */
@@ -258,10 +264,10 @@ export function installStore(): void {
     { deep: true },
   )
 
-  tick()
+  tick(true)
   setInterval(tick, 250)
   // Intervals are throttled in the background; catch up the instant we're visible again.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') tick()
+    if (document.visibilityState === 'visible') tick(true)
   })
 }
