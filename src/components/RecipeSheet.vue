@@ -9,20 +9,22 @@ import { formatDuration } from '../lib/format'
 import { describeIngredient, type Ingredient } from '../lib/ingredients'
 import { type Recipe, type Step, totalMs } from '../lib/recipe'
 import { uid } from '../lib/timer'
-import { removeStepFrom, setRecipeServes, startRecipe } from '../store'
+import { removeRecipe, removeStepFrom, setRecipeServes, startRecipe } from '../store'
 import IngredientSheet from './IngredientSheet.vue'
 import RecipeGraph from './RecipeGraph.vue'
 
 const props = defineProps<{ recipe: Recipe }>()
-const emit = defineEmits<{ close: []; branch: [after: string[]]; edit: [step: Step] }>()
+const emit = defineEmits<{ close: []; prepped: []; branch: [after: string[]]; edit: [step: Step] }>()
 
 const panel = ref<HTMLElement>()
 useDialog(panel, () => emit('close'))
 
-// Servings this time: the recipe's own, until changed here.
+// Servings this time: the recipe's own, until changed here. A recipe that doesn't yet know
+// how many it's for learns it from the stepper: that's what its amounts are for.
 const serves = ref<number | null>(props.recipe.serves ?? null)
 const adjust = (by: number) => {
   serves.value = Math.max(1, (serves.value ?? 0) + by)
+  if (props.recipe.serves == null || !props.recipe.ingredients?.length) setRecipeServes(props.recipe.id, serves.value)
 }
 const ingredients = computed(() => props.recipe.ingredients ?? [])
 const scaledFrom = computed(() => props.recipe.serves ?? null)
@@ -33,9 +35,21 @@ const addIngredient = () => {
 }
 
 function prep() {
-  // If they set servings here and the recipe never had any, those become the recipe's.
-  if (props.recipe.serves == null && serves.value != null) setRecipeServes(props.recipe.id, serves.value)
   startRecipe(props.recipe, serves.value)
+  emit('prepped')
+}
+
+// Deleting takes two taps and backs out by itself, like removing a timer.
+const sure = ref(false)
+let unsure: ReturnType<typeof setTimeout> | undefined
+function del() {
+  if (!sure.value) {
+    sure.value = true
+    unsure = setTimeout(() => (sure.value = false), 4000)
+    return
+  }
+  clearTimeout(unsure)
+  removeRecipe(props.recipe.id)
   emit('close')
 }
 </script>
@@ -79,7 +93,10 @@ function prep() {
         />
       </section>
 
-      <button class="prep" @click="prep">Prep {{ recipe.name }}{{ serves ? ` for ${serves}` : '' }}</button>
+      <button class="prep" :disabled="!recipe.steps.length" @click="prep">
+        {{ recipe.steps.length ? `Prep ${recipe.name}${serves ? ` for ${serves}` : ''}` : 'Add a step to prep this' }}
+      </button>
+      <button class="delete" :class="{ sure }" @click="del">{{ sure ? 'Really delete it?' : 'Delete recipe' }}</button>
     </div>
 
     <IngredientSheet v-if="editing" :recipe-id="recipe.id" :ingredient="editing" @close="editing = null" />
@@ -236,6 +253,23 @@ h3 {
 
 .prep:active {
   transform: scale(0.98);
+}
+
+.prep:disabled {
+  border-style: solid;
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+
+.delete {
+  min-height: 44px;
+  color: var(--text-dim);
+  font-weight: 650;
+}
+
+.delete.sure {
+  color: var(--danger);
 }
 
 @keyframes fade {

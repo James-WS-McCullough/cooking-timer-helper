@@ -42,11 +42,19 @@ const size = ref({ w: 0, h: 0 })
 function measure() {
   const root = box.value
   if (!root) return
-  const origin = root.getBoundingClientRect()
   size.value = { w: root.clientWidth, h: root.clientHeight }
+  // Layout offsets, not bounding rects: the sheet this sits in is still scaling up from its
+  // pop animation when this first runs, and rects would draw the lines to where the boxes were.
   const centre = (id: string) => {
-    const r = nodes.get(id)?.getBoundingClientRect()
-    return r ? { x: r.left - origin.left + r.width / 2, top: r.top - origin.top, bottom: r.bottom - origin.top } : null
+    const el = nodes.get(id)
+    if (!el) return null
+    let x = el.offsetWidth / 2
+    let y = 0
+    for (let at: HTMLElement | null = el; at && at !== root; at = at.offsetParent as HTMLElement | null) {
+      x += at.offsetLeft
+      y += at.offsetTop
+    }
+    return { x, top: y, bottom: y + el.offsetHeight }
   }
   const out: string[] = []
   for (const step of props.recipe.steps) {
@@ -139,7 +147,6 @@ watch(
 }
 
 .row {
-  position: relative;
   display: flex;
   justify-content: center;
   gap: 10px;

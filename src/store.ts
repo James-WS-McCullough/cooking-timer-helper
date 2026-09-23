@@ -8,7 +8,6 @@ import {
   addStepAfter,
   appendStep,
   completeStep,
-  forkDelays,
   isNote,
   type Note,
   noteStep,
@@ -283,36 +282,15 @@ function bringUp(run: Run, step: Step, now: number, inPlaceOf: string): void {
   }
 }
 
-/**
- * Steps that came up together are a fork: the branch with the most cooking ahead goes on
- * now and the others wait their turn (the same "start in…" as Sync Finish), so the branches
- * land together. That's what a fork is for: "start both after the prep, but line them up".
- */
-function alignFork(run: Run, steps: Step[], now: number): void {
-  const timers = steps.filter((s) => s.kind === 'timer')
-  if (timers.length < 2) return
-  const delays = forkDelays(
-    run.recipe,
-    timers.map((s) => s.id),
-  )
-  for (const step of timers) {
-    const delay = delays.get(step.id) ?? 0
-    const timer = state.timers.find((t) => t.step?.runId === run.id && t.step.stepId === step.id)
-    if (!timer || delay <= 0) continue
-    timer.syncedAt = now
-    timer.startAt = now + delay
-    timer.due = false
-  }
-}
-
 /** A step's card has had its Done: the run moves on. A run whose every step is done is over. */
 function stepDone(ref: StepRef, cardId: string): void {
   const run = runById(ref.runId)
   if (!run) return
   const now = Date.now()
   const next = completeStep(run, ref.stepId)
+  // Branches that come up together are all simply ready: the cook starts each when it suits
+  // (the engine's forkDelays could line them up to finish together; the owner preferred not).
   for (const step of next) bringUp(run, step, now, cardId)
-  alignFork(run, next, now)
   if (runFinished(run)) {
     state.runs = state.runs.filter((r) => r !== run)
     if (!run.recipe.name && run.recipe.steps.length > 1) justFinished.value = run
@@ -396,6 +374,15 @@ export function addStep(target: StepTarget, step: NewStep): void {
   tick(true)
 }
 
+/** The ingredients a step being written can name: those of the recipe the target points into. */
+export function ingredientsFor(target: StepTarget): Ingredient[] {
+  if (target.kind === 'card') {
+    const card = state.timers.find((t) => t.id === target.id) ?? state.notes.find((n) => n.id === target.id)
+    return (card && runOfCard(card)?.recipe.ingredients) ?? []
+  }
+  return recipeOf(target)?.ingredients ?? []
+}
+
 /** Take a step out of a saved recipe, or an upcoming step out of a run. */
 export function removeStepFrom(scope: 'recipe' | 'run', id: string, stepId: string): void {
   const recipe = recipeOf({ in: scope, id })
@@ -446,6 +433,14 @@ export function saveRecipe(run: Run, name: string): void {
   void play('beep', true)
 }
 
+/** A recipe started from scratch: a name, then its screen fills in the rest. */
+export function newRecipe(name: string): Recipe {
+  const recipe: Recipe = { id: uid(), name: tidyName(name), steps: [], ingredients: [], serves: null }
+  state.recipes.push(recipe)
+  void play('beep', true)
+  return recipe
+}
+
 export function removeRecipe(id: string): void {
   state.recipes = state.recipes.filter((r) => r.id !== id)
 }
@@ -457,7 +452,6 @@ export function startRecipe(recipe: Recipe, serves: number | null = recipe.serve
   const now = Date.now()
   const first = run.active.map((id) => stepById(run.recipe, id)).filter((s): s is Step => !!s)
   for (const step of first) bringUp(run, step, now, '')
-  alignFork(run, first, now)
   void play('beep', true)
   tick(true)
 }

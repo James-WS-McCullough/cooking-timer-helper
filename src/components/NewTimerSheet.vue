@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { formatClock, parseDuration, tidyName } from '../lib/format'
 import { NO_ALERTS } from '../lib/timer'
-import { addStep, type Preset, type Recipe, type StepTarget, savePreset, startPreset, startTimer } from '../store'
+import { addStep, type Preset, type StepTarget, savePreset, startPreset, startTimer } from '../store'
 import NameStep from './sheet/NameStep.vue'
 import SheetShell from './sheet/SheetShell.vue'
 import { useSteps } from './sheet/steps'
@@ -14,7 +14,7 @@ import TimeStep from './sheet/TimeStep.vue'
 // `heard`: a name that came from the mic without a time; the wizard opens at "How long?" for it.
 // `after`: the timer is the next step of that card's recipe, not a timer of its own.
 const props = defineProps<{ prep?: boolean; heard?: string; after?: StepTarget }>()
-const emit = defineEmits<{ close: []; recipe: [recipe: Recipe] }>()
+const emit = defineEmits<{ close: [] }>()
 
 // One decision per screen, and most taps move forward on their own.
 const STEPS = ['name', 'time'] as const
@@ -46,10 +46,6 @@ function onPreset(p: Preset) {
   if (props.after) addStep(props.after, { kind: 'timer', name: p.name, durationMs: p.durationMs, plan: p.plan })
   else startPreset(p, props.prep)
   emit('close')
-}
-
-function onRecipe(r: Recipe) {
-  emit('recipe', r) // App opens the recipe's screen: servings, ingredients, steps, Prep
 }
 
 // ---- Time ----
@@ -100,7 +96,6 @@ function onSubmit() {
       :prep="prep"
       @pick="pickName"
       @preset="onPreset"
-      @recipe="onRecipe"
     />
     <TimeStep v-else v-model:custom-time="customTime" v-model:keep-as-preset="keepAsPreset" :name="name" :invalid="!!timeProblem" @start="start" />
 

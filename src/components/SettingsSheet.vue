@@ -7,7 +7,7 @@ import { useDialog } from '../lib/dialog'
 import { theme, toggleTheme } from '../lib/theme'
 import VoiceButton from './VoiceButton.vue'
 
-const emit = defineEmits<{ close: []; qr: [] }>()
+const emit = defineEmits<{ close: []; qr: []; recipes: [] }>()
 
 const panel = ref<HTMLElement>()
 useDialog(panel, () => emit('close'))
@@ -36,6 +36,19 @@ useDialog(panel, () => emit('close'))
         <span class="label">
           <strong>{{ theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode' }}</strong>
           <small>Currently {{ theme }}</small>
+        </span>
+      </button>
+
+      <button class="row action" @click="emit('recipes')">
+        <span class="icon">
+          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15Z" />
+            <path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H20M9 7.5h7M9 11h5" />
+          </svg>
+        </span>
+        <span class="label">
+          <strong>Recipes</strong>
+          <small>Chains of timers and instructions, kept</small>
         </span>
       </button>
 

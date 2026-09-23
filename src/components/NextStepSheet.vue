@@ -3,7 +3,7 @@
 // hands over to the ordinary wizard (App.vue opens it with `after` set). One decision per
 // screen: kind, then (for an instruction) the words.
 import { ref, watch } from 'vue'
-import { addStep, type StepTarget } from '../store'
+import { addStep, ingredientsFor, type StepTarget } from '../store'
 import SheetShell from './sheet/SheetShell.vue'
 import { useSteps } from './sheet/steps'
 
@@ -22,6 +22,22 @@ if (editing) step.value = 'text'
 
 const text = ref(props.initial ?? '')
 const box = ref<HTMLInputElement>()
+
+// The recipe's ingredients, one tap to name in the instruction: "[Diced chicken]".
+const ingredients = ingredientsFor(props.target)
+function mention(name: string) {
+  const el = box.value
+  const at = el?.selectionStart ?? text.value.length
+  const before = text.value.slice(0, at)
+  const after = text.value.slice(at)
+  const piece = `[${name}]`
+  text.value = `${before}${before && !/\s$/.test(before) ? ' ' : ''}${piece}${after && !/^\s/.test(after) ? ' ' : ''}${after}`
+  requestAnimationFrame(() => {
+    const pos = text.value.length - after.length
+    el?.focus()
+    el?.setSelectionRange(pos, pos)
+  })
+}
 watch(
   step,
   (now) => {
@@ -74,6 +90,9 @@ function onSubmit() {
         aria-label="The instruction"
         maxlength="120"
       />
+      <div v-if="ingredients.length" class="chips" role="group" aria-label="Ingredients to name">
+        <button v-for="i in ingredients" :key="i.id" type="button" class="chip small" @click="mention(i.name)">{{ i.name }}</button>
+      </div>
       <p class="hint">Short and doable in one go. It comes up {{ target.name ? `when ${target.name} is done` : 'in its turn' }}, and waits for you to press Done. Name ingredients in [brackets] and they join the recipe’s list.</p>
     </template>
 
@@ -113,6 +132,19 @@ function onSubmit() {
 
 .option:active {
   transform: scale(0.98);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.chip.small {
+  min-height: 40px;
+  padding: 0 12px;
+  font-size: 0.95rem;
 }
 
 .hint {

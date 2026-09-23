@@ -7,6 +7,7 @@ import NewTimerSheet from './components/NewTimerSheet.vue'
 import NextStepSheet from './components/NextStepSheet.vue'
 import NoteCard from './components/NoteCard.vue'
 import RecipeSheet from './components/RecipeSheet.vue'
+import RecipesSheet from './components/RecipesSheet.vue'
 import SaveRecipeSheet from './components/SaveRecipeSheet.vue'
 import SettingsSheet from './components/SettingsSheet.vue'
 import SizzleLogo from './components/SizzleLogo.vue'
@@ -80,7 +81,13 @@ function editStep(scope: 'recipe' | 'run', id: string, step: Step) {
   }
 }
 
-// A saved recipe's screen. It stays open behind the step sheets while a branch is added.
+// The recipes list, and a recipe's own screen (which stays open behind the step sheets while a branch is added).
+const recipesOpen = ref(false)
+function openRecipes() {
+  void play('beep', true)
+  settingsOpen.value = false
+  recipesOpen.value = true
+}
 const recipeOpen = ref<string | null>(null)
 const openRecipe = computed(() => state.recipes.find((r) => r.id === recipeOpen.value))
 function branchRecipe(afterIds: string[]) {
@@ -332,6 +339,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </div>
           <button class="prep" @click="openSheet('prep')">Prep a timer</button>
           <p class="prep-note">Set timers up now, start each one when it's time.</p>
+          <button class="recipes" @click="openRecipes">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15Z" />
+              <path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H20M9 7.5h7M9 11h5" />
+            </svg>
+            Recipes
+          </button>
         </div>
       </Transition>
     </main>
@@ -427,14 +441,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     />
 
     <AlertSheet v-else-if="alertsFor" :key="alertsFor.id" :timer="alertsFor" @close="alertsForId = null" />
-    <SettingsSheet v-if="settingsOpen" @close="settingsOpen = false" @qr="((settingsOpen = false), (qrOpen = true))" />
+    <SettingsSheet v-if="settingsOpen" @close="settingsOpen = false" @qr="((settingsOpen = false), (qrOpen = true))" @recipes="openRecipes" />
     <QrSheet v-if="qrOpen" @close="qrOpen = false" />
     <SaveRecipeSheet v-if="justFinished" :run="justFinished" @close="justFinished = null" />
+    <RecipesSheet v-if="recipesOpen" @close="recipesOpen = false" @open="recipeOpen = $event.id" />
     <!-- Sits beneath the step sheets (its own z-index), so adding a branch doesn't lose the servings chosen. -->
     <RecipeSheet
       v-if="openRecipe"
       :recipe="openRecipe"
       @close="recipeOpen = null"
+      @prepped="((recipeOpen = null), (recipesOpen = false))"
       @branch="branchRecipe"
       @edit="editStep('recipe', openRecipe.id, $event)"
     />
@@ -591,6 +607,23 @@ h1 {
   font-size: 0.85rem;
   text-align: center;
   color: var(--text-dim);
+}
+
+/* Recipes: chains of steps, kept. Quieter than the two ways to start a timer. */
+.recipes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  margin-top: 22px;
+  padding: 0 18px;
+  border-radius: 24px;
+  color: var(--text-dim);
+  font-weight: 700;
+}
+
+.recipes:active {
+  transform: scale(0.97);
 }
 
 /* Tucked in the corner of the start screen: light/dark, and hand the app to another device. */

@@ -98,12 +98,15 @@ test('steps follow one another, each in the place of the last, and the chain can
   await expect(save).toBeHidden()
   await expect(page.locator('.card')).toHaveCount(0)
 
-  // …and it's one tap on the Prep path, not on the quick path.
+  // …and it's in Recipes, on the start screen, not on either timer path.
   await page.getByRole('button', { name: 'New timer' }).click()
   await expect(sheet(page).getByText('Recipes')).toBeHidden()
   await sheet(page).getByRole('button', { name: 'Close' }).click()
-  await page.getByRole('button', { name: 'Prep a timer' }).click()
-  await sheet(page).getByRole('button', { name: 'Prep Stir fry: 3 steps · 13 min' }).click()
+  await page.getByRole('button', { name: 'Recipes' }).click()
+  await page
+    .getByRole('dialog', { name: 'Recipes' })
+    .getByRole('button', { name: 'Stir fry: 3 steps · 13 min' })
+    .click()
   const recipe = page.getByRole('dialog', { name: 'Stir fry' })
   await expect(recipe).toContainText('3 steps · 13 min')
   await recipe.getByRole('button', { name: 'Prep Stir fry' }).click()
@@ -160,9 +163,10 @@ test('the recipe screen: servings scale the ingredients, a branch forks the grap
     )
   })
   await page.goto('/')
-  await page.getByRole('button', { name: 'Prep a timer' }).click()
-  await sheet(page)
-    .getByRole('button', { name: /Prep Mash/ })
+  await page.getByRole('button', { name: 'Recipes' }).click()
+  await page
+    .getByRole('dialog', { name: 'Recipes' })
+    .getByRole('button', { name: /^Mash:/ })
     .click()
   const recipe = page.getByRole('dialog', { name: 'Mash' })
   await expect(recipe).toContainText('Serves 4')
@@ -187,10 +191,49 @@ test('the recipe screen: servings scale the ingredients, a branch forks the grap
   const chop = page.getByRole('article', { name: 'Chop the 1 onions' })
   await expect(chop).toBeVisible()
   await chop.getByRole('button', { name: 'Done' }).click()
-  // Both branches come up; the short one waits so they land together (16 min of waiting).
+  // Both branches come up ready; the cook starts each when it suits.
   const mash = page.getByRole('article', { name: 'Mash', exact: true })
   const veg = page.getByRole('article', { name: 'Veg', exact: true })
   await expect(mash).toContainText('Ready to start')
-  await expect(veg).toContainText('Start in')
-  await expect(veg.getByRole('timer')).toHaveText(clockNear('16:00'))
+  await expect(veg).toContainText('Ready to start')
+  await expect(veg.getByRole('timer')).toHaveText('4:00')
+})
+
+test('a recipe from scratch: name it, say what it needs, then write steps that name the ingredients', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Recipes' }).click()
+  const list = page.getByRole('dialog', { name: 'Recipes' })
+  await expect(list).toContainText('Nothing here yet')
+  await list.getByRole('button', { name: '+ New recipe' }).click()
+  await list.getByRole('textbox', { name: 'Recipe name' }).fill('chicken curry')
+  await list.getByRole('button', { name: 'Create' }).click()
+
+  const recipe = page.getByRole('dialog', { name: 'Chicken curry' })
+  await expect(recipe).toContainText('Serves ?')
+  await recipe.getByRole('button', { name: 'More' }).click()
+  await recipe.getByRole('button', { name: 'More' }).click()
+  await expect(recipe).toContainText('Serves 2')
+  await expect(recipe.getByRole('button', { name: 'Add a step to prep this' })).toBeDisabled()
+
+  await recipe.getByRole('button', { name: '+ Add an ingredient' }).click()
+  const ingredient = page.getByRole('dialog', { name: 'New ingredient' })
+  await ingredient.getByRole('textbox', { name: 'Ingredient' }).fill('Diced chicken')
+  await ingredient.getByRole('textbox', { name: 'Amount' }).fill('300')
+  await ingredient.getByRole('textbox', { name: 'Unit' }).fill('g')
+  await ingredient.getByRole('button', { name: 'Save' }).click()
+  await expect(recipe.getByRole('button', { name: '300 g diced chicken' })).toBeVisible()
+
+  await recipe.getByRole('button', { name: '+ Add a step at the end' }).click()
+  const step = page.getByRole('dialog', { name: /What comes next|What should it say/ })
+  await step.getByRole('button', { name: 'An instruction' }).click()
+  await step.getByRole('textbox', { name: 'The instruction' }).fill('Add the')
+  await step.getByRole('button', { name: 'Diced chicken' }).click() // the recipe's ingredients, one tap to name
+  await expect(step.getByRole('textbox', { name: 'The instruction' })).toHaveValue('Add the [Diced chicken]')
+  await step.getByRole('button', { name: 'Add step' }).click()
+  await expect(recipe.getByRole('button', { name: 'Add the Diced chicken' })).toBeVisible()
+  await recipe.getByRole('button', { name: 'Prep Chicken curry for 2' }).click()
+  await expect(recipe).toBeHidden()
+  await expect(page.getByRole('article', { name: 'Add the 300 g diced chicken' })).toBeVisible() // the amounts were for 2
 })
