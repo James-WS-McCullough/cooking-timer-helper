@@ -351,6 +351,9 @@ function runFor(card: Timer | Note): Run {
 export type StepTarget =
   | { kind: 'card'; id: string; name: string }
   | { kind: 'recipe'; id: string; after: string[]; name: string }
+  | { kind: 'run'; id: string; after: string[]; name: string }
+  /** Not a new step: change this one (an upcoming step of a run, or any step of a saved recipe). */
+  | { kind: 'edit'; in: 'recipe' | 'run'; id: string; stepId: string; name: string }
 export type NewStep =
   | { kind: 'note'; text: string }
   | { kind: 'timer'; name: string; durationMs: number; plan: AlertPlan }
@@ -358,22 +361,53 @@ export type NewStep =
 const makeStep = (step: NewStep) =>
   step.kind === 'note' ? noteStep(step.text.trim()) : timerStep(tidyName(step.name), step.durationMs, step.plan)
 
-/** "+ Next step" on a card, or a branch in a recipe's graph. */
+/** The recipe a target points at: a saved one, or the one a run is cooking. */
+function recipeOf(target: { in?: 'recipe' | 'run'; kind?: string; id: string }): Recipe | undefined {
+  const scope = target.in ?? target.kind
+  return scope === 'run' ? runById(target.id)?.recipe : recipeById(target.id)
+}
+
+/** "+ Next step" on a card, a branch in a graph, or a change to a step. */
 export function addStep(target: StepTarget, step: NewStep): void {
-  const made = makeStep(step)
-  if (target.kind === 'card') {
-    const card = state.timers.find((t) => t.id === target.id) ?? state.notes.find((n) => n.id === target.id)
-    if (!card) return
-    appendStep(runFor(card).recipe, made)
+  if (target.kind === 'edit') {
+    const recipe = recipeOf(target)
+    const at = recipe?.steps.findIndex((s) => s.id === target.stepId) ?? -1
+    const old = recipe?.steps[at]
+    if (!recipe || !old) return
+    const made = makeStep(step)
+    recipe.steps[at] = { ...made, id: old.id, after: old.after }
+    if (made.kind === 'note') addStepAfter(recipe, { ...made, id: 'scratch' }, []) // registers any new [ingredients]…
+    recipe.steps = recipe.steps.filter((s) => s.id !== 'scratch') // …without keeping the scratch copy
   } else {
-    const recipe = recipeById(target.id)
-    if (!recipe) return
-    if (target.after.length) addStepAfter(recipe, made, target.after)
-    else appendStep(recipe, made)
+    const made = makeStep(step)
+    if (target.kind === 'card') {
+      const card = state.timers.find((t) => t.id === target.id) ?? state.notes.find((n) => n.id === target.id)
+      if (!card) return
+      appendStep(runFor(card).recipe, made)
+    } else {
+      const recipe = recipeOf(target)
+      if (!recipe) return
+      if (target.after.length) addStepAfter(recipe, made, target.after)
+      else appendStep(recipe, made)
+    }
   }
   if (step.kind === 'timer') rememberTime(state.history, step.name, step.durationMs)
   void play('beep', true)
   tick(true)
+}
+
+/** Take a step out of a saved recipe, or an upcoming step out of a run. */
+export function removeStepFrom(scope: 'recipe' | 'run', id: string, stepId: string): void {
+  const recipe = recipeOf({ in: scope, id })
+  if (!recipe) return
+  const run = scope === 'run' ? runById(id) : undefined
+  if (run && (run.done.includes(stepId) || run.active.includes(stepId))) return // on screen or behind us: leave it
+  removeStep(recipe, stepId)
+}
+
+/** The run a card is cooking in, if any. */
+export function runOfCard(card: Timer | Note): Run | undefined {
+  return card.step ? runById(card.step.runId) : undefined
 }
 
 /** How many steps follow this card in its chain (0 when it isn't in one, or is the last). */
@@ -405,7 +439,9 @@ export function stepContext(card: Timer | Note): { run: Run; step: Step } | unde
 
 /** Keep a cooked chain (or the run of a recipe) under a name, for the Prep list. */
 export function saveRecipe(run: Run, name: string): void {
-  state.recipes.push(saveAs(run, tidyName(name)))
+  const recipe = saveAs(run, tidyName(name))
+  state.recipes.push(recipe)
+  run.recipe.name = recipe.name // the cards now say which recipe they're part of, and it isn't offered again at the end
   justFinished.value = null
   void play('beep', true)
 }
@@ -427,11 +463,6 @@ export function startRecipe(recipe: Recipe, serves: number | null = recipe.serve
 }
 
 // ---- Editing a saved recipe (the recipe screen) ----
-
-export function removeRecipeStep(recipeId: string, stepId: string): void {
-  const recipe = recipeById(recipeId)
-  if (recipe) removeStep(recipe, stepId)
-}
 
 export function setRecipeServes(recipeId: string, serves: number | null): void {
   const recipe = recipeById(recipeId)

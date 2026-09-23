@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AlertSheet from './components/AlertSheet.vue'
+import ChainSheet from './components/ChainSheet.vue'
 import MicIcon from './components/MicIcon.vue'
 import NewTimerSheet from './components/NewTimerSheet.vue'
 import NextStepSheet from './components/NextStepSheet.vue'
@@ -17,10 +18,19 @@ import VoiceButton from './components/VoiceButton.vue'
 import { announcement } from './lib/announce'
 import { play, soundReady } from './lib/audio'
 import { dialogOpen } from './lib/dialog'
-import { isNote } from './lib/recipe'
+import { isNote, type Recipe, type Step, tails } from './lib/recipe'
 import { theme, toggleTheme } from './lib/theme'
 import { anyPausedByAll, countingTimers, displayOrder, isPending, statusOf, syncable } from './lib/timer'
-import { arrivals, chainEnd, justFinished, pauseEverything, resumeEverything, type StepTarget, state } from './store'
+import {
+  arrivals,
+  chainEnd,
+  justFinished,
+  pauseEverything,
+  resumeEverything,
+  runOfCard,
+  type StepTarget,
+  state,
+} from './store'
 
 // Which wizard is open, if any: start a timer now, or prep one for later.
 const sheet = ref<'start' | 'prep' | null>(null)
@@ -35,7 +45,39 @@ const after = ref<StepTarget>()
 function openNext(id: string) {
   void play('beep', true)
   const card = cards.value.find((c) => c.id === id)
-  if (card) nextFor.value = { kind: 'card', id, name: chainEnd(card) } // the sheet says what the new step follows
+  if (!card) return
+  // Once there's a chain to see, the button shows it (and the graph is where steps are added and changed).
+  const run = runOfCard(card)
+  if (run && run.recipe.steps.length >= 2) chainOpen.value = run.id
+  else nextFor.value = { kind: 'card', id, name: chainEnd(card) } // the sheet says what the new step follows
+}
+
+// The chain being cooked, as a graph. Like the recipe screen, it stays beneath the step sheets.
+const chainOpen = ref<string | null>(null)
+const openChain = computed(() => state.runs.find((r) => r.id === chainOpen.value))
+const stepName = (step: Step) => (step.kind === 'timer' ? step.name : step.text)
+// What the new step will follow, for the sheet's badge: the chosen node, or the chain's end.
+const followsName = (recipe: Recipe, afterIds: string[]) => {
+  const chosen = afterIds.map((id) => recipe.steps.find((s) => s.id === id)).filter((s): s is Step => !!s)
+  return (chosen.length ? chosen : tails(recipe)).map(stepName).join(' and ')
+}
+function addToChain(afterIds: string[]) {
+  const run = openChain.value
+  if (run) nextFor.value = { kind: 'run', id: run.id, after: afterIds, name: followsName(run.recipe, afterIds) }
+}
+
+// Changing a step: an instruction goes straight to its words, a timer to the wizard at "How long?".
+const editText = ref<string>()
+function editStep(scope: 'recipe' | 'run', id: string, step: Step) {
+  const target: StepTarget = { kind: 'edit', in: scope, id, stepId: step.id, name: stepName(step) }
+  if (step.kind === 'note') {
+    editText.value = step.text
+    nextFor.value = target
+  } else {
+    after.value = target
+    heardName.value = step.name
+    sheet.value = 'start'
+  }
 }
 
 // A saved recipe's screen. It stays open behind the step sheets while a branch is added.
@@ -44,15 +86,17 @@ const openRecipe = computed(() => state.recipes.find((r) => r.id === recipeOpen.
 function branchRecipe(afterIds: string[]) {
   const recipe = openRecipe.value
   if (!recipe) return
-  const last = afterIds[0] && recipe.steps.find((s) => s.id === afterIds[0])
-  const name = last ? (last.kind === 'timer' ? last.name : last.text) : ''
-  nextFor.value = { kind: 'recipe', id: recipe.id, after: afterIds, name }
+  nextFor.value = { kind: 'recipe', id: recipe.id, after: afterIds, name: followsName(recipe, afterIds) }
 }
 function nextIsTimer() {
   after.value = nextFor.value ?? undefined
   nextFor.value = null
   heardName.value = undefined
   sheet.value = 'start'
+}
+function closeNext() {
+  nextFor.value = null
+  editText.value = undefined
 }
 
 // The mic: say a timer instead of tapping it in. If it hears a name but no time, the
@@ -372,7 +416,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
     <SyncSheet v-if="syncOpen && canSync" @close="syncOpen = false" />
     <ListenSheet v-else-if="micOpen" @close="micOpen = false" @time="askHowLong" />
-    <NextStepSheet v-else-if="nextFor" :target="nextFor" @close="nextFor = null" @timer="nextIsTimer" />
+    <NextStepSheet v-else-if="nextFor" :target="nextFor" :initial="editText" @close="closeNext" @timer="nextIsTimer" />
     <NewTimerSheet
       v-else-if="sheet"
       :prep="sheet === 'prep'"
@@ -387,7 +431,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <QrSheet v-if="qrOpen" @close="qrOpen = false" />
     <SaveRecipeSheet v-if="justFinished" :run="justFinished" @close="justFinished = null" />
     <!-- Sits beneath the step sheets (its own z-index), so adding a branch doesn't lose the servings chosen. -->
-    <RecipeSheet v-if="openRecipe" :recipe="openRecipe" @close="recipeOpen = null" @branch="branchRecipe" />
+    <RecipeSheet
+      v-if="openRecipe"
+      :recipe="openRecipe"
+      @close="recipeOpen = null"
+      @branch="branchRecipe"
+      @edit="editStep('recipe', openRecipe.id, $event)"
+    />
+    <ChainSheet v-if="openChain" :run="openChain" @close="chainOpen = null" @add="addToChain" @edit="editStep('run', openChain.id, $event)" />
   </div>
 </template>
 

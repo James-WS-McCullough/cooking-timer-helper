@@ -7,7 +7,8 @@ import { addStep, type StepTarget } from '../store'
 import SheetShell from './sheet/SheetShell.vue'
 import { useSteps } from './sheet/steps'
 
-const props = defineProps<{ target: StepTarget }>()
+// `initial`: changing an existing instruction; the sheet opens on its words.
+const props = defineProps<{ target: StepTarget; initial?: string }>()
 const emit = defineEmits<{ close: []; timer: [] }>()
 
 const STEPS = ['kind', 'text'] as const
@@ -16,12 +17,18 @@ const TITLES: Record<(typeof STEPS)[number], string> = {
   text: 'What should it say?',
 }
 const { step, direction, go, back } = useSteps(STEPS)
+const editing = props.target.kind === 'edit'
+if (editing) step.value = 'text'
 
-const text = ref('')
+const text = ref(props.initial ?? '')
 const box = ref<HTMLInputElement>()
-watch(step, (now) => {
-  if (now === 'text') requestAnimationFrame(() => box.value?.focus())
-})
+watch(
+  step,
+  (now) => {
+    if (now === 'text') requestAnimationFrame(() => box.value?.focus())
+  },
+  { immediate: true },
+)
 
 function add() {
   if (!text.value.trim()) return
@@ -40,8 +47,8 @@ function onSubmit() {
     :steps="STEPS"
     :step="step"
     :direction="direction"
-    :can-go-back="step === 'text'"
-    :badge="target.name ? `After ${target.name}` : 'New step'"
+    :can-go-back="step === 'text' && !editing"
+    :badge="editing ? 'Change step' : target.name ? `After ${target.name}` : 'New step'"
     @back="back"
     @close="emit('close')"
     @submit="onSubmit"
@@ -71,7 +78,7 @@ function onSubmit() {
     </template>
 
     <template v-if="step === 'text'" #foot>
-      <button type="submit" class="next" :disabled="!text.trim()">Add step</button>
+      <button type="submit" class="next" :disabled="!text.trim()">{{ editing ? 'Save' : 'Add step' }}</button>
     </template>
   </SheetShell>
 </template>

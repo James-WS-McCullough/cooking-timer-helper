@@ -4,13 +4,29 @@ import { card, clockNear, controlClock, MIN, pass, seed, sheet, startTimer } fro
 // A chain of steps, built while cooking: veg 5 min → "move the veg to a bowl" → chicken 8 min.
 // Done on each step brings up the next, in its place; the finished chain can be kept as a recipe.
 
+/** The card's list-plus button: straight to "what comes next?" for a lone timer; the chain's graph once there is one. */
+async function pressNext(page: import('@playwright/test').Page, card: string) {
+  await page.getByRole('button', { name: new RegExp(`step(s)? after ${card}`) }).click()
+  const graph = page.getByRole('dialog', { name: /This recipe|Stir fry/ })
+  await expect(graph.or(sheet(page))).toBeVisible()
+  if (await graph.isVisible()) await graph.getByRole('button', { name: '+ Add a step at the end' }).click()
+}
+
 async function addInstruction(page: import('@playwright/test').Page, after: string, text: string) {
-  await page.getByRole('button', { name: new RegExp(`step(s)? after ${after}`) }).click()
+  await pressNext(page, after)
   await expect(sheet(page).getByText(`After ${after}`)).toBeVisible()
   await sheet(page).getByRole('button', { name: 'An instruction' }).click()
   await sheet(page).getByRole('textbox', { name: 'The instruction' }).fill(text)
   await sheet(page).getByRole('button', { name: 'Add step' }).click()
-  await expect(sheet(page)).toBeHidden()
+  await leaveGraph(page)
+}
+
+/** Back to the cards: the graph, if that's where we came from, is still open behind the step sheet. */
+async function leaveGraph(page: import('@playwright/test').Page) {
+  const graph = page.getByRole('dialog', { name: /This recipe|Stir fry/ })
+  await expect(page.getByRole('dialog', { name: /What comes next|How long|What's cooking/ })).toBeHidden()
+  if (await graph.isVisible()) await graph.getByRole('button', { name: 'Close' }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
 }
 
 async function addTimerStep(
@@ -20,7 +36,7 @@ async function addTimerStep(
   minutes: number,
   follows = after,
 ) {
-  await page.getByRole('button', { name: new RegExp(`step(s)? after ${after}`) }).click()
+  await pressNext(page, after)
   await expect(sheet(page).getByText(`After ${follows}`)).toBeVisible() // names the chain's end, not the card
   await sheet(page).getByRole('button', { name: 'A timer' }).click()
   await expect(sheet(page).getByText(`After ${follows}`)).toBeVisible() // the ordinary wizard, in "next step" mode
@@ -28,7 +44,7 @@ async function addTimerStep(
   await sheet(page)
     .getByRole('button', { name: String(minutes), exact: true })
     .click()
-  await expect(sheet(page)).toBeHidden()
+  await leaveGraph(page)
 }
 
 test('steps follow one another, each in the place of the last, and the chain can be saved', async ({ page }) => {
@@ -41,9 +57,24 @@ test('steps follow one another, each in the place of the last, and the chain can
   await expect(nextButton).toBeVisible()
   await expect(page.locator('.card')).toHaveCount(1) // nothing else on screen yet
 
+  // With a chain to see, the button shows it: a step can be changed there, and the lot kept as a recipe early.
+  await nextButton.click()
+  const graph = page.getByRole('dialog', { name: 'This recipe' })
+  await expect(graph).toContainText('0 of 3 steps done')
+  await graph.getByRole('button', { name: 'Move the veg to a bowl' }).click()
+  await graph.getByRole('button', { name: 'Change this step' }).click()
+  await expect(sheet(page).getByText('Change step')).toBeVisible()
+  await sheet(page).getByRole('textbox', { name: 'The instruction' }).fill('Move the veg to a bowl and cover')
+  await sheet(page).getByRole('button', { name: 'Save' }).click()
+  await expect(graph.getByRole('button', { name: 'Move the veg to a bowl and cover' })).toBeVisible()
+  await graph.getByRole('button', { name: 'Veg, 5 min, now' }).click()
+  await expect(graph.getByRole('button', { name: 'Change this step' })).toBeHidden() // it's on screen: only add after
+  await graph.getByRole('button', { name: 'Cancel' }).click()
+  await graph.getByRole('button', { name: 'Close' }).click()
+
   await pass(page, 5 * MIN + 500)
   await card(page, 'Veg ready').getByRole('button', { name: 'Done, Veg' }).click()
-  const note = page.getByRole('article', { name: 'Move the veg to a bowl' })
+  const note = page.getByRole('article', { name: 'Move the veg to a bowl and cover' })
   await expect(note).toBeVisible()
   await expect(note).toContainText('Step 2 of 3')
   await expect(page.locator('.card')).toHaveCount(1)

@@ -7,14 +7,27 @@ import { formatDuration } from '../lib/format'
 import { layout, type Recipe, type Run, type Step } from '../lib/recipe'
 import FoodIcon from './FoodIcon.vue'
 
-const props = defineProps<{ recipe: Recipe; run?: Run; editable?: boolean }>()
-const emit = defineEmits<{ pick: [step: Step] }>()
+const props = defineProps<{ recipe: Recipe; run?: Run }>()
+const emit = defineEmits<{ add: [after: string[]]; edit: [step: Step]; remove: [step: Step] }>()
 
 const rows = computed(() => layout(props.recipe))
 const stateOf = (s: Step) =>
   props.run?.done.includes(s.id) ? 'done' : props.run?.active.includes(s.id) ? 'up' : 'later'
 const label = (s: Step) =>
   s.kind === 'timer' ? s.name || `${formatDuration(s.durationMs)} timer` : s.text.replace(/\[|\]/g, '')
+
+// Tapping a node: a small menu under the graph. A step that's done or on screen can only
+// have something added after it; an upcoming one can be changed or taken out.
+const picked = ref<Step | null>(null)
+const pickedState = computed(() => (picked.value ? stateOf(picked.value) : 'later'))
+function choose(what: 'add' | 'edit' | 'remove') {
+  const step = picked.value
+  picked.value = null
+  if (!step) return
+  if (what === 'add') emit('add', [step.id])
+  else if (what === 'edit') emit('edit', step)
+  else emit('remove', step)
+}
 
 // Lines are drawn between the real boxes, measured after each render.
 const box = ref<HTMLElement>()
@@ -78,10 +91,10 @@ watch(
         :ref="setNode(s.id)"
         type="button"
         class="node"
-        :class="[stateOf(s), s.kind]"
-        :disabled="!editable && !run"
+        :class="[stateOf(s), s.kind, { picked: picked?.id === s.id }]"
+        :aria-pressed="picked?.id === s.id"
         :aria-label="`${label(s)}${s.kind === 'timer' ? `, ${formatDuration(s.durationMs)}` : ''}${stateOf(s) === 'done' ? ', done' : stateOf(s) === 'up' ? ', now' : ''}`"
-        @click="emit('pick', s)"
+        @click="picked = picked?.id === s.id ? null : s"
       >
         <span class="glyph">
           <FoodIcon v-if="s.kind === 'timer'" :name="s.name" />
@@ -94,6 +107,13 @@ watch(
         <span v-if="s.kind === 'timer'" class="time tabular">{{ formatDuration(s.durationMs) }}</span>
       </button>
     </div>
+    <div v-if="picked" class="node-menu" role="group" :aria-label="label(picked)">
+      <button v-if="pickedState === 'later'" type="button" class="menu-btn" @click="choose('edit')">Change this step</button>
+      <button type="button" class="menu-btn" @click="choose('add')">Add a step after this</button>
+      <button v-if="pickedState === 'later'" type="button" class="menu-btn danger" @click="choose('remove')">Remove this step</button>
+      <button type="button" class="menu-btn quiet" @click="picked = null">Cancel</button>
+    </div>
+    <button v-else type="button" class="link" @click="emit('add', [])">+ Add a step at the end</button>
   </div>
 </template>
 
@@ -139,8 +159,8 @@ watch(
   text-align: center;
 }
 
-.node:disabled {
-  cursor: default;
+.node.picked {
+  border-color: var(--text);
 }
 
 .node.up {
@@ -176,6 +196,40 @@ watch(
 .time {
   font-size: 0.8rem;
   color: var(--text-dim);
+}
+
+.node-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.menu-btn {
+  min-height: 48px;
+  border-radius: 10px;
+  background: var(--surface);
+  font-weight: 700;
+}
+
+.menu-btn.danger {
+  color: var(--danger);
+}
+
+.menu-btn.quiet {
+  background: transparent;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.link {
+  align-self: flex-start;
+  min-height: 40px;
+  padding: 0 4px;
+  color: var(--accent-text);
+  font-weight: 700;
 }
 
 /* Three across on a phone: narrower boxes, same rows. */

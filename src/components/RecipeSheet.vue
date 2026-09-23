@@ -9,12 +9,12 @@ import { formatDuration } from '../lib/format'
 import { describeIngredient, type Ingredient } from '../lib/ingredients'
 import { type Recipe, type Step, totalMs } from '../lib/recipe'
 import { uid } from '../lib/timer'
-import { removeRecipeStep, setRecipeServes, startRecipe } from '../store'
+import { removeStepFrom, setRecipeServes, startRecipe } from '../store'
 import IngredientSheet from './IngredientSheet.vue'
 import RecipeGraph from './RecipeGraph.vue'
 
 const props = defineProps<{ recipe: Recipe }>()
-const emit = defineEmits<{ close: []; branch: [after: string[]] }>()
+const emit = defineEmits<{ close: []; branch: [after: string[]]; edit: [step: Step] }>()
 
 const panel = ref<HTMLElement>()
 useDialog(panel, () => emit('close'))
@@ -26,18 +26,6 @@ const adjust = (by: number) => {
 }
 const ingredients = computed(() => props.recipe.ingredients ?? [])
 const scaledFrom = computed(() => props.recipe.serves ?? null)
-
-// Tapping a node: a two-choice popover under the graph.
-const picked = ref<Step | null>(null)
-function branchAfter() {
-  const after = picked.value ? [picked.value.id] : []
-  picked.value = null
-  emit('branch', after)
-}
-function removePicked() {
-  if (picked.value) removeRecipeStep(props.recipe.id, picked.value.id)
-  picked.value = null
-}
 
 const editing = ref<Ingredient | null>(null)
 const addIngredient = () => {
@@ -83,13 +71,12 @@ function prep() {
 
       <section>
         <h3>Steps</h3>
-        <RecipeGraph :recipe="recipe" editable @pick="picked = $event" />
-        <div v-if="picked" class="node-menu" role="group" :aria-label="`${picked.kind === 'timer' ? picked.name : picked.text}`">
-          <button class="menu-btn" @click="branchAfter">Add a step after this</button>
-          <button class="menu-btn danger" @click="removePicked">Remove this step</button>
-          <button class="menu-btn quiet" @click="picked = null">Cancel</button>
-        </div>
-        <button v-else class="link" @click="emit('branch', [])">+ Add a step at the end</button>
+        <RecipeGraph
+          :recipe="recipe"
+          @add="emit('branch', $event)"
+          @edit="emit('edit', $event)"
+          @remove="removeStepFrom('recipe', recipe.id, $event.id)"
+        />
       </section>
 
       <button class="prep" @click="prep">Prep {{ recipe.name }}{{ serves ? ` for ${serves}` : '' }}</button>
@@ -235,32 +222,6 @@ h3 {
   font-weight: 700;
 }
 
-.node-menu {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 10px;
-  padding: 8px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-}
-
-.menu-btn {
-  min-height: 48px;
-  border-radius: 10px;
-  background: var(--surface);
-  font-weight: 700;
-}
-
-.menu-btn.danger {
-  color: var(--danger);
-}
-
-.menu-btn.quiet {
-  background: transparent;
-  color: var(--text-dim);
-  font-weight: 600;
-}
 
 .prep {
   min-height: 64px;

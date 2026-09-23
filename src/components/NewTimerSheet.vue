@@ -85,7 +85,7 @@ function onSubmit() {
     :step="step"
     :direction="direction"
     :can-go-back="step === 'time'"
-    :badge="after ? (after.name ? `After ${after.name}` : 'New step') : prep ? 'Prep for later' : undefined"
+    :badge="after ? (after.kind === 'edit' ? 'Change step' : after.name ? `After ${after.name}` : 'New step') : prep ? 'Prep for later' : undefined"
     :prep="prep"
     :immersive="step === 'name' && searching"
     @back="back"
@@ -110,7 +110,7 @@ function onSubmit() {
     <template v-else-if="step === 'time' && customTime.trim()" #foot>
       <p v-if="timeProblem" id="time-problem" class="problem" role="alert">{{ timeProblem }}</p>
       <button type="submit" class="next tabular" :disabled="!!timeProblem">
-        {{ after ? 'Add step' : prep ? 'Prep' : 'Start' }}{{ customMs && !timeProblem ? ` ${formatClock(customMs)}` : '' }}
+        {{ after ? (after.kind === 'edit' ? 'Save' : 'Add step') : prep ? 'Prep' : 'Start' }}{{ customMs && !timeProblem ? ` ${formatClock(customMs)}` : '' }}
       </button>
     </template>
   </SheetShell>
