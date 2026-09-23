@@ -7,9 +7,9 @@ import { card, clockNear, controlClock, MIN, pass, seed, sheet, startTimer } fro
 /** The card's list-plus button: straight to "what comes next?" for a lone timer; the chain's graph once there is one. */
 async function pressNext(page: import('@playwright/test').Page, card: string) {
   await page.getByRole('button', { name: new RegExp(`step(s)? after ${card}`) }).click()
-  const graph = page.getByRole('dialog', { name: /This recipe|Stir fry/ })
+  const graph = page.getByRole('heading', { name: /This recipe|Stir fry/, level: 1 })
   await expect(graph.or(sheet(page))).toBeVisible()
-  if (await graph.isVisible()) await graph.getByRole('button', { name: '+ Add a step at the end' }).click()
+  if (await graph.isVisible()) await page.getByRole('button', { name: '+ Add a step at the end' }).click()
 }
 
 async function addInstruction(page: import('@playwright/test').Page, after: string, text: string) {
@@ -23,10 +23,10 @@ async function addInstruction(page: import('@playwright/test').Page, after: stri
 
 /** Back to the cards: the graph, if that's where we came from, is still open behind the step sheet. */
 async function leaveGraph(page: import('@playwright/test').Page) {
-  const graph = page.getByRole('dialog', { name: /This recipe|Stir fry/ })
-  await expect(page.getByRole('dialog', { name: /What comes next|How long|What's cooking/ })).toBeHidden()
-  if (await graph.isVisible()) await graph.getByRole('button', { name: 'Close' }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
+  const back = page.getByRole('button', { name: 'Back' })
+  if (await back.isVisible()) await back.click()
+  await expect(back).toBeHidden()
 }
 
 async function addTimerStep(
@@ -59,18 +59,18 @@ test('steps follow one another, each in the place of the last, and the chain can
 
   // With a chain to see, the button shows it: a step can be changed there, and the lot kept as a recipe early.
   await nextButton.click()
-  const graph = page.getByRole('dialog', { name: 'This recipe' })
-  await expect(graph).toContainText('0 of 3 steps done')
-  await graph.getByRole('button', { name: 'Move the veg to a bowl' }).click()
-  await graph.getByRole('button', { name: 'Change this step' }).click()
+  await expect(page.getByRole('heading', { name: 'This recipe', level: 1 })).toBeVisible() // a page, not a sheet: room for the graph
+  await expect(page.getByText('0 of 3 steps done')).toBeVisible()
+  await page.getByRole('button', { name: 'Move the veg to a bowl' }).click()
+  await page.getByRole('button', { name: 'Change this step' }).click()
   await expect(sheet(page).getByText('Change step')).toBeVisible()
   await sheet(page).getByRole('textbox', { name: 'The instruction' }).fill('Move the veg to a bowl and cover')
   await sheet(page).getByRole('button', { name: 'Save' }).click()
-  await expect(graph.getByRole('button', { name: 'Move the veg to a bowl and cover' })).toBeVisible()
-  await graph.getByRole('button', { name: 'Veg, 5 min, now' }).click()
-  await expect(graph.getByRole('button', { name: 'Change this step' })).toBeHidden() // it's on screen: only add after
-  await graph.getByRole('button', { name: 'Cancel' }).click()
-  await graph.getByRole('button', { name: 'Close' }).click()
+  await expect(page.getByRole('button', { name: 'Move the veg to a bowl and cover' })).toBeVisible()
+  await page.getByRole('button', { name: 'Veg, 5 min, now' }).click()
+  await expect(page.getByRole('button', { name: 'Change this step' })).toBeHidden() // it's on screen: only add after
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await page.getByRole('button', { name: 'Back' }).click()
 
   await pass(page, 5 * MIN + 500)
   await card(page, 'Veg ready').getByRole('button', { name: 'Done, Veg' }).click()
@@ -103,14 +103,11 @@ test('steps follow one another, each in the place of the last, and the chain can
   await expect(sheet(page).getByText('Recipes')).toBeHidden()
   await sheet(page).getByRole('button', { name: 'Close' }).click()
   await page.getByRole('button', { name: 'Recipes' }).click()
-  await page
-    .getByRole('dialog', { name: 'Recipes' })
-    .getByRole('button', { name: 'Stir fry: 3 steps · 13 min' })
-    .click()
-  const recipe = page.getByRole('dialog', { name: 'Stir fry' })
-  await expect(recipe).toContainText('3 steps · 13 min')
-  await recipe.getByRole('button', { name: 'Prep Stir fry' }).click()
-  await expect(recipe).toBeHidden()
+  await page.getByRole('button', { name: 'Stir fry: 3 steps · 13 min' }).click()
+  await expect(page.getByRole('heading', { name: 'Stir fry', level: 1 })).toBeVisible()
+  await expect(page.getByText('3 steps · 13 min')).toBeVisible()
+  await page.getByRole('button', { name: 'Prep Stir fry' }).click()
+  await expect(page.getByRole('heading', { name: 'Stir fry', level: 1 })).toBeHidden()
   await expect(card(page, 'Veg')).toBeVisible()
   await expect(card(page, 'Veg')).toContainText('Ready to start')
   await expect(page.locator('.card')).toHaveCount(1)
@@ -164,11 +161,8 @@ test('the recipe screen: servings scale the ingredients, a branch forks the grap
   })
   await page.goto('/')
   await page.getByRole('button', { name: 'Recipes' }).click()
-  await page
-    .getByRole('dialog', { name: 'Recipes' })
-    .getByRole('button', { name: /^Mash:/ })
-    .click()
-  const recipe = page.getByRole('dialog', { name: 'Mash' })
+  await page.getByRole('button', { name: /^Mash:/ }).click()
+  const recipe = page.locator('main')
   await expect(recipe).toContainText('Serves 4')
   await expect(recipe.getByRole('button', { name: '2 onions' })).toBeVisible()
   await recipe.getByRole('button', { name: 'Fewer' }).click()
@@ -177,16 +171,16 @@ test('the recipe screen: servings scale the ingredients, a branch forks the grap
   await expect(recipe.getByRole('button', { name: '1 onions' })).toBeVisible()
   await expect(recipe.getByRole('button', { name: '25 g butter' })).toBeVisible()
 
-  // Branch off "Chop": veg alongside the mash. The graph shows the fork.
+  // Branch off "Chop": veg alongside the mash. The graph, on its own page, shows the fork.
+  await recipe.getByRole('button', { name: /3 steps/ }).click()
   await recipe.getByRole('button', { name: /^Chop the Onions/ }).click()
   await recipe.getByRole('button', { name: 'Add a step after this' }).click()
   await expect(sheet(page).getByText('After Chop the [Onions]')).toBeVisible()
   await sheet(page).getByRole('button', { name: 'A timer' }).click()
   await sheet(page).getByRole('button', { name: 'Veg', exact: true }).click()
   await sheet(page).getByRole('button', { name: '4', exact: true }).click()
-  await expect(recipe).toBeVisible() // back where we were
-  await expect(recipe.getByRole('button', { name: 'Veg, 4 min' })).toBeVisible()
-
+  await expect(recipe.getByRole('button', { name: 'Veg, 4 min' })).toBeVisible() // back on the graph
+  await page.getByRole('button', { name: 'Back' }).click()
   await recipe.getByRole('button', { name: 'Prep Mash for 2' }).click()
   const chop = page.getByRole('article', { name: 'Chop the 1 onions' })
   await expect(chop).toBeVisible()
@@ -204,13 +198,14 @@ test('a recipe from scratch: name it, say what it needs, then write steps that n
 }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Recipes' }).click()
-  const list = page.getByRole('dialog', { name: 'Recipes' })
+  const list = page.locator('main')
   await expect(list).toContainText('Nothing here yet')
   await list.getByRole('button', { name: '+ New recipe' }).click()
   await list.getByRole('textbox', { name: 'Recipe name' }).fill('chicken curry')
   await list.getByRole('button', { name: 'Create' }).click()
 
-  const recipe = page.getByRole('dialog', { name: 'Chicken curry' })
+  await expect(page.getByRole('heading', { name: 'Chicken curry', level: 1 })).toBeVisible()
+  const recipe = page.locator('main')
   await expect(recipe).toContainText('Serves ?')
   await recipe.getByRole('button', { name: 'More' }).click()
   await recipe.getByRole('button', { name: 'More' }).click()
@@ -225,6 +220,7 @@ test('a recipe from scratch: name it, say what it needs, then write steps that n
   await ingredient.getByRole('button', { name: 'Save' }).click()
   await expect(recipe.getByRole('button', { name: '300 g diced chicken' })).toBeVisible()
 
+  await recipe.getByRole('button', { name: /No steps yet/ }).click()
   await recipe.getByRole('button', { name: '+ Add a step at the end' }).click()
   const step = page.getByRole('dialog', { name: /What comes next|What should it say/ })
   await step.getByRole('button', { name: 'An instruction' }).click()
@@ -234,6 +230,6 @@ test('a recipe from scratch: name it, say what it needs, then write steps that n
   await step.getByRole('button', { name: 'Add step' }).click()
   await expect(recipe.getByRole('button', { name: 'Add the Diced chicken' })).toBeVisible()
   await recipe.getByRole('button', { name: 'Prep Chicken curry for 2' }).click()
-  await expect(recipe).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Back' })).toBeHidden()
   await expect(page.getByRole('article', { name: 'Add the 300 g diced chicken' })).toBeVisible() // the amounts were for 2
 })

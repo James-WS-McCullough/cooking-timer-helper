@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AlertSheet from './components/AlertSheet.vue'
-import ChainSheet from './components/ChainSheet.vue'
 import MicIcon from './components/MicIcon.vue'
 import NewTimerSheet from './components/NewTimerSheet.vue'
 import NextStepSheet from './components/NextStepSheet.vue'
 import NoteCard from './components/NoteCard.vue'
-import RecipeSheet from './components/RecipeSheet.vue'
-import RecipesSheet from './components/RecipesSheet.vue'
+import RecipePage from './components/pages/RecipePage.vue'
+import RecipesPage from './components/pages/RecipesPage.vue'
+import StepsPage from './components/pages/StepsPage.vue'
 import SaveRecipeSheet from './components/SaveRecipeSheet.vue'
 import SettingsSheet from './components/SettingsSheet.vue'
 import SizzleLogo from './components/SizzleLogo.vue'
@@ -49,27 +49,66 @@ function openNext(id: string) {
   if (!card) return
   // Once there's a chain to see, the button shows it (and the graph is where steps are added and changed).
   const run = runOfCard(card)
-  if (run && run.recipe.steps.length >= 2) chainOpen.value = run.id
+  if (run && run.recipe.steps.length >= 2) page.value = { kind: 'chain', runId: run.id }
   else nextFor.value = { kind: 'card', id, name: chainEnd(card) } // the sheet says what the new step follows
 }
 
-// The chain being cooked, as a graph. Like the recipe screen, it stays beneath the step sheets.
-const chainOpen = ref<string | null>(null)
-const openChain = computed(() => state.runs.find((r) => r.id === chainOpen.value))
+// The recipe pages, in place of the timer list: the list of recipes, one recipe (servings,
+// ingredients), its steps as a graph; and the graph of a chain being cooked. Step sheets
+// open over them, so what's on the page (the servings chosen, say) is still there afterwards.
+type Page =
+  | { kind: 'recipes' }
+  | { kind: 'recipe'; id: string }
+  | { kind: 'steps'; id: string }
+  | { kind: 'chain'; runId: string }
+const page = ref<Page | null>(null)
+const pageRecipe = computed(() => {
+  const p = page.value
+  return p && (p.kind === 'recipe' || p.kind === 'steps') ? state.recipes.find((r) => r.id === p.id) : undefined
+})
+// How many the recipe on the page is being cooked for this time (the page's stepper).
+const servesChoice = ref<number | null>(null)
+watch(pageRecipe, (r, was) => {
+  if (r && r.id !== was?.id) servesChoice.value = r.serves ?? null
+})
+const pageRun = computed(() => {
+  const p = page.value
+  return p?.kind === 'chain' ? state.runs.find((r) => r.id === p.runId) : undefined
+})
+// A page whose recipe or run has gone (deleted, finished) closes itself.
+watch([pageRecipe, pageRun], () => {
+  const p = page.value
+  if ((p?.kind === 'recipe' || p?.kind === 'steps') && !pageRecipe.value) page.value = { kind: 'recipes' }
+  if (p?.kind === 'chain' && !pageRun.value) page.value = null
+})
+function openRecipes() {
+  void play('beep', true)
+  settingsOpen.value = false
+  page.value = { kind: 'recipes' }
+}
+
 const stepName = (step: Step) => (step.kind === 'timer' ? step.name : step.text)
 // What the new step will follow, for the sheet's badge: the chosen node, or the chain's end.
 const followsName = (recipe: Recipe, afterIds: string[]) => {
   const chosen = afterIds.map((id) => recipe.steps.find((s) => s.id === id)).filter((s): s is Step => !!s)
   return (chosen.length ? chosen : tails(recipe)).map(stepName).join(' and ')
 }
-function addToChain(afterIds: string[]) {
-  const run = openChain.value
+function addOnPage(afterIds: string[]) {
+  const run = pageRun.value
+  const recipe = pageRecipe.value
   if (run) nextFor.value = { kind: 'run', id: run.id, after: afterIds, name: followsName(run.recipe, afterIds) }
+  else if (recipe)
+    nextFor.value = { kind: 'recipe', id: recipe.id, after: afterIds, name: followsName(recipe, afterIds) }
 }
 
 // Changing a step: an instruction goes straight to its words, a timer to the wizard at "How long?".
 const editText = ref<string>()
-function editStep(scope: 'recipe' | 'run', id: string, step: Step) {
+function editOnPage(step: Step) {
+  const run = pageRun.value
+  const recipe = pageRecipe.value
+  const scope = run ? 'run' : 'recipe'
+  const id = run?.id ?? recipe?.id
+  if (!id) return
   const target: StepTarget = { kind: 'edit', in: scope, id, stepId: step.id, name: stepName(step) }
   if (step.kind === 'note') {
     editText.value = step.text
@@ -81,20 +120,6 @@ function editStep(scope: 'recipe' | 'run', id: string, step: Step) {
   }
 }
 
-// The recipes list, and a recipe's own screen (which stays open behind the step sheets while a branch is added).
-const recipesOpen = ref(false)
-function openRecipes() {
-  void play('beep', true)
-  settingsOpen.value = false
-  recipesOpen.value = true
-}
-const recipeOpen = ref<string | null>(null)
-const openRecipe = computed(() => state.recipes.find((r) => r.id === recipeOpen.value))
-function branchRecipe(afterIds: string[]) {
-  const recipe = openRecipe.value
-  if (!recipe) return
-  nextFor.value = { kind: 'recipe', id: recipe.id, after: afterIds, name: followsName(recipe, afterIds) }
-}
 function nextIsTimer() {
   after.value = nextFor.value ?? undefined
   nextFor.value = null
@@ -279,7 +304,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <!-- A slim strip above the list, scrolling with it: a gear pinned to the corner would end up
          sitting on whichever card's bell and ✕ scrolled underneath it. Sizzle's speech bubble
          drops into this strip too, instead of over the first card. -->
-    <div v-if="cards.length" class="topbar">
+    <div v-if="cards.length && !page" class="topbar">
       <h1 class="sr-only">Sizzle timers</h1>
       <button class="gear" aria-label="Settings" @click="settingsOpen = true">
         <!-- Sliders, not a cog: at this size a cog reads as the theme toggle's sun. -->
@@ -307,8 +332,28 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </button>
     </Transition>
 
-    <main :class="{ 'has-timers': cards.length > 0, 'with-sync': canSync }">
+    <main :class="{ 'has-timers': cards.length > 0 && !page, 'with-sync': canSync && !page, 'is-page': !!page }">
+      <RecipesPage v-if="page?.kind === 'recipes'" @back="page = null" @open="page = { kind: 'recipe', id: $event.id }" />
+      <RecipePage
+        v-else-if="page?.kind === 'recipe' && pageRecipe"
+        v-model:serves="servesChoice"
+        :recipe="pageRecipe"
+        @back="page = { kind: 'recipes' }"
+        @steps="page = { kind: 'steps', id: pageRecipe.id }"
+        @prepped="page = null"
+      />
+      <StepsPage
+        v-else-if="page?.kind === 'steps' && pageRecipe"
+        :recipe="pageRecipe"
+        :serves="servesChoice"
+        @back="page = { kind: 'recipe', id: pageRecipe.id }"
+        @add="addOnPage"
+        @edit="editOnPage"
+        @prepped="page = null"
+      />
+      <StepsPage v-else-if="page?.kind === 'chain' && pageRun" :recipe="pageRun.recipe" :run="pageRun" @back="page = null" @add="addOnPage" @edit="editOnPage" />
       <TransitionGroup
+        v-else
         ref="grid"
         name="cards"
         tag="div"
@@ -325,7 +370,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
       <!-- Nothing cooking: the way in is the whole screen -->
       <Transition name="welcome">
-        <div v-if="!cards.length" class="welcome">
+        <div v-if="!cards.length && !page" class="welcome">
           <SizzleLogo class="logo" />
           <h1>Sizzle</h1>
           <div class="start-row">
@@ -352,7 +397,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
     <Transition name="sync">
       <button
-        v-if="showPauseAll"
+        v-if="showPauseAll && !page"
         class="pause-all"
         :class="{ resume: pausedAll, 'above-sync': canSync }"
         @click="pausedAll ? resumeEverything() : pauseEverything()"
@@ -369,7 +414,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </Transition>
 
     <Transition name="dock">
-      <div v-if="cards.length" class="dock">
+      <div v-if="cards.length && !page" class="dock">
         <Transition name="sync">
           <button v-if="canSync" class="sync" @click="openSync">
             <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
@@ -398,11 +443,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
     <!-- Outside the start screen's own transition: a transformed parent would drag a fixed child around. -->
     <Transition name="welcome">
-      <VoiceButton v-if="!cards.length" />
+      <VoiceButton v-if="!cards.length && !page" />
     </Transition>
     <Transition name="welcome">
       <button
-        v-if="!cards.length"
+        v-if="!cards.length && !page"
         class="corner-button theme-button"
         :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
         @click="toggleTheme"
@@ -418,7 +463,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </button>
     </Transition>
     <Transition name="welcome">
-      <button v-if="!cards.length" class="corner-button qr-button" aria-label="Show a QR code to open Sizzle on another device" @click="qrOpen = true">
+      <button v-if="!cards.length && !page" class="corner-button qr-button" aria-label="Show a QR code to open Sizzle on another device" @click="qrOpen = true">
         <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
           <rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1" />
           <rect x="14" y="3.5" width="6.5" height="6.5" rx="1" />
@@ -437,24 +482,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       :heard="heardName"
       :after="after"
       @close="sheet = null"
-      @recipe="((sheet = null), (recipeOpen = $event.id))"
     />
 
     <AlertSheet v-else-if="alertsFor" :key="alertsFor.id" :timer="alertsFor" @close="alertsForId = null" />
     <SettingsSheet v-if="settingsOpen" @close="settingsOpen = false" @qr="((settingsOpen = false), (qrOpen = true))" @recipes="openRecipes" />
     <QrSheet v-if="qrOpen" @close="qrOpen = false" />
     <SaveRecipeSheet v-if="justFinished" :run="justFinished" @close="justFinished = null" />
-    <RecipesSheet v-if="recipesOpen" @close="recipesOpen = false" @open="recipeOpen = $event.id" />
-    <!-- Sits beneath the step sheets (its own z-index), so adding a branch doesn't lose the servings chosen. -->
-    <RecipeSheet
-      v-if="openRecipe"
-      :recipe="openRecipe"
-      @close="recipeOpen = null"
-      @prepped="((recipeOpen = null), (recipesOpen = false))"
-      @branch="branchRecipe"
-      @edit="editStep('recipe', openRecipe.id, $event)"
-    />
-    <ChainSheet v-if="openChain" :run="openChain" @close="chainOpen = null" @add="addToChain" @edit="editStep('run', openChain.id, $event)" />
   </div>
 </template>
 
@@ -520,6 +553,10 @@ main.has-timers {
 
 main.with-sync {
   padding-bottom: calc(240px + env(safe-area-inset-bottom));
+}
+
+main.is-page {
+  padding-bottom: 24px; /* no dock under a page */
 }
 
 .grid {
