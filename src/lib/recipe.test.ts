@@ -120,6 +120,20 @@ describe('shape and ingredients (the graph view and the recipe screen)', () => {
     ])
   })
 
+  it('orders a row so each step sits under its parent: two branches that carry on do not cross', () => {
+    const chicken = timerStep('Chicken', 10 * MIN, NO_ALERTS)
+    const trim = noteStep('Trim the broccoli', [chicken.id])
+    const sauceIn = noteStep('Add sauce', [chicken.id])
+    const sauce = timerStep('Sauce', 5 * MIN, NO_ALERTS, [sauceIn.id]) // added first, but belongs under "Add sauce"
+    const veg = timerStep('Veg', 10 * MIN, NO_ALERTS, [trim.id])
+    const recipe: Recipe = { id: 'r', name: '', steps: [chicken, trim, sauceIn, sauce, veg] }
+    expect(layout(recipe).map((row) => row.map((s) => s.id))).toEqual([
+      [chicken.id],
+      [trim.id, sauceIn.id],
+      [veg.id, sauce.id],
+    ])
+  })
+
   it('a branch off a node forks; "+ Next step" after that joins the open ends', () => {
     const veg = timerStep('Veg', 5 * MIN, NO_ALERTS)
     const run = startRun(veg)

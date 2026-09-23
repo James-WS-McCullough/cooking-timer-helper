@@ -128,7 +128,9 @@ export function removeStep(recipe: Recipe, id: string): void {
 
 /**
  * Where each step sits when drawn: its row (1 + the deepest predecessor's row, so a step
- * is always below everything it waits for) and the steps that share that row, in order.
+ * is always below everything it waits for) and the steps that share that row, ordered so
+ * that each sits under its predecessors as far as possible, which keeps lines from crossing
+ * when two branches each carry on.
  */
 export function layout(recipe: Recipe): Step[][] {
   const row = new Map<string, number>()
@@ -146,7 +148,20 @@ export function layout(recipe: Recipe): Step[][] {
     rows[r] ??= []
     rows[r].push(step)
   }
-  return rows.filter(Boolean)
+  const placed = rows.filter(Boolean)
+  // Each row after the first: sort by the average position of a step's predecessors above.
+  const at = new Map<string, number>()
+  for (const [r, row] of placed.entries()) {
+    if (r > 0) {
+      const centre = (s: Step) => {
+        const above = s.after.map((id) => at.get(id)).filter((x): x is number => x !== undefined)
+        return above.length ? above.reduce((a, b) => a + b, 0) / above.length : Number.POSITIVE_INFINITY
+      }
+      row.sort((a, b) => centre(a) - centre(b))
+    }
+    for (const [i, s] of row.entries()) at.set(s.id, i / Math.max(1, row.length - 1))
+  }
+  return placed
 }
 
 /** Cooking time from this step to the end of the recipe, along the longest path. */

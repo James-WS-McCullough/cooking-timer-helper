@@ -149,7 +149,7 @@ h2 {
 
 .ingredient {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   min-height: 44px;
   padding: 0 14px;
