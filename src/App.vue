@@ -5,6 +5,7 @@ import MicIcon from './components/MicIcon.vue'
 import NewTimerSheet from './components/NewTimerSheet.vue'
 import NextStepSheet from './components/NextStepSheet.vue'
 import NoteCard from './components/NoteCard.vue'
+import ImportPage from './components/pages/ImportPage.vue'
 import RecipePage from './components/pages/RecipePage.vue'
 import RecipesPage from './components/pages/RecipesPage.vue'
 import StepsPage from './components/pages/StepsPage.vue'
@@ -58,6 +59,7 @@ function openNext(id: string) {
 // open over them, so what's on the page (the servings chosen, say) is still there afterwards.
 type Page =
   | { kind: 'recipes' }
+  | { kind: 'import' }
   | { kind: 'recipe'; id: string }
   | { kind: 'steps'; id: string }
   | { kind: 'chain'; runId: string }
@@ -333,7 +335,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </Transition>
 
     <main :class="{ 'has-timers': cards.length > 0 && !page, 'with-sync': canSync && !page, 'is-page': !!page }">
-      <RecipesPage v-if="page?.kind === 'recipes'" @back="page = null" @open="page = { kind: 'recipe', id: $event.id }" />
+      <RecipesPage
+        v-if="page?.kind === 'recipes'"
+        @back="page = null"
+        @open="page = { kind: 'recipe', id: $event.id }"
+        @import="page = { kind: 'import' }"
+      />
+      <ImportPage v-else-if="page?.kind === 'import'" @back="page = { kind: 'recipes' }" @open="page = { kind: 'recipe', id: $event.id }" />
       <RecipePage
         v-else-if="page?.kind === 'recipe' && pageRecipe"
         v-model:serves="servesChoice"

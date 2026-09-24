@@ -233,3 +233,45 @@ test('a recipe from scratch: name it, say what it needs, then write steps that n
   await expect(page.getByRole('button', { name: 'Back' })).toBeHidden()
   await expect(page.getByRole('article', { name: 'Add the 300 g diced chicken' })).toBeVisible() // the amounts were for 2
 })
+
+test('importing: copy the prompt, paste the JSON an AI gave back, and it is a recipe', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Recipes' }).click()
+  await page.getByRole('button', { name: 'Import a recipe' }).click()
+  await expect(page.getByRole('heading', { name: 'Import a recipe', level: 1 })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Copy the prompt' }).click()
+  await expect(page.getByRole('button', { name: 'Copied' })).toBeVisible()
+  const clipboard = await page.evaluate(() => navigator.clipboard.readText())
+  expect(clipboard).toContain('"steps"')
+  expect(clipboard.trim().endsWith('Recipe:')).toBe(true)
+
+  const box = page.getByRole('textbox', { name: 'The recipe JSON' })
+  await box.fill('{ "name": "Eggs" }')
+  await expect(page.locator('#import-problem')).toHaveText('The recipe needs at least one step in "steps".')
+  await expect(page.getByRole('button', { name: 'Import' })).toBeDisabled()
+
+  const reply = `Here's your recipe:
+\`\`\`json
+{
+  "name": "Boiled eggs",
+  "serves": 2,
+  "ingredients": [{ "name": "Eggs", "amount": 2 }, { "name": "Salt" }],
+  "steps": [
+    { "id": "boil", "type": "instruction", "text": "Bring a pan of water to the boil" },
+    { "id": "eggs", "type": "timer", "name": "Eggs", "minutes": 6.5 },
+    { "id": "serve", "type": "instruction", "text": "Serve the [Eggs] with [Salt]" }
+  ]
+}
+\`\`\``
+  await box.fill(reply)
+  await expect(page.locator('main').getByRole('status')).toHaveText('Boiled eggs: 3 steps, 2 ingredients, serves 2')
+  await page.getByRole('button', { name: 'Import' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Boiled eggs', level: 1 })).toBeVisible()
+  await expect(page.locator('main')).toContainText('Serves 2')
+  await expect(page.getByRole('button', { name: '2 eggs' })).toBeVisible()
+  await page.getByRole('button', { name: /3 steps/ }).click()
+  await expect(page.getByRole('button', { name: 'Eggs, 6 min 30 s' })).toBeVisible()
+})

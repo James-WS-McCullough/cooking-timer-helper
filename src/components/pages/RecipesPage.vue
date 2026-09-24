@@ -7,7 +7,7 @@ import { newRecipe, state } from '../../store'
 import FoodIcon from '../FoodIcon.vue'
 import PageShell from './PageShell.vue'
 
-const emit = defineEmits<{ back: []; open: [recipe: Recipe] }>()
+const emit = defineEmits<{ back: []; open: [recipe: Recipe]; import: [] }>()
 
 const describe = (r: Recipe) => {
   const bits = [`${r.steps.length} step${r.steps.length === 1 ? '' : 's'}`]
@@ -44,13 +44,14 @@ function create() {
         </button>
       </li>
     </ul>
-    <p v-else class="empty">Nothing here yet. A recipe is a chain of timers and instructions: build one below, or keep one from a chain you're cooking.</p>
+    <p v-else class="empty">Nothing here yet. A recipe is a chain of timers and instructions: build one below, import one with an AI's help, or keep one from a chain you're cooking.</p>
 
     <form v-if="naming" class="naming" @submit.prevent="create">
       <input ref="box" v-model="name" class="field" autocomplete="off" enterkeyhint="done" placeholder="Chicken curry" aria-label="Recipe name" maxlength="60" />
       <button type="submit" class="go" :disabled="!name.trim()">Create</button>
     </form>
     <button v-else class="new" @click="startNaming">+ New recipe</button>
+    <button class="import" @click="emit('import')">Import a recipe</button>
   </PageShell>
 </template>
 
@@ -123,6 +124,18 @@ function create() {
 
 .new {
   margin-top: 6px;
+}
+
+.import {
+  min-height: 48px;
+  border-radius: var(--radius-sm);
+  border: 2px solid color-mix(in srgb, var(--accent) 60%, var(--bg));
+  color: var(--accent-text);
+  font-weight: 750;
+}
+
+.import:active {
+  transform: scale(0.98);
 }
 
 .naming {

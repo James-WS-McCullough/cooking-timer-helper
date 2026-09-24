@@ -441,6 +441,13 @@ export function newRecipe(name: string): Recipe {
   return recipe
 }
 
+/** A recipe parsed from pasted JSON (recipeImport.ts): kept as it came. */
+export function importRecipe(recipe: Recipe): Recipe {
+  state.recipes.push(recipe)
+  void play('beep', true)
+  return recipe
+}
+
 export function removeRecipe(id: string): void {
   state.recipes = state.recipes.filter((r) => r.id !== id)
 }
