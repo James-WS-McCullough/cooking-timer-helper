@@ -33,7 +33,7 @@ function context(): AudioContext | null {
   if (!Ctor) return null
   const created: AudioContext = new Ctor()
   created.onstatechange = () => {
-    soundReady.value = created.state === 'running'
+    soundReady.value = created.state === 'running' || resting
   }
   ctx = created
   return created
@@ -58,16 +58,22 @@ function buffer(c: AudioContext, name: Sfx): Promise<AudioBuffer> {
   return loading
 }
 
-// iOS audio session, chosen per moment. 'transient' most of the time: short sounds that mix
-// with whatever else is playing (a podcast keeps going), rather than 'playback', the music-app
+// iOS audio session, chosen by the moment. 'transient' while nothing needs the cook: sounds
+// mix with whatever else is playing (a podcast keeps going), unlike 'playback', the music-app
 // mode, which stopped the cook's music every time Sizzle came to the front. But 'transient' is
-// silenced by the ring/silent switch and an alarm must get through, so 'playback' is taken for
-// the seconds an alarm sounds, then given back (whether iOS then resumes the music is its
-// business). The mic (src/lib/listen/) needs 'play-and-record' for as long as it records.
+// silenced by the ring/silent switch and an alarm must get through, so a few seconds before
+// anything is due the session becomes 'playback' (switching at the alarm itself lost its first
+// second to the cross-fade) and stays so while anything is waiting on the cook, so the alarm,
+// the reminders and the voice all come through. Then it's handed back, and our audio is put to
+// sleep, which is the one thing that gives iOS a reason to resume the music (it won't on the
+// session type alone). The mic (src/lib/listen/) needs 'play-and-record' while it records.
 type SessionType = 'transient' | 'playback' | 'play-and-record'
 export const SOUNDING: SessionType = 'transient'
 let sessionType: SessionType = SOUNDING
-let alarmsSounding = 0
+let alarmMode = false
+let resting = false // the context is suspended by us, not by the browser: sound is still "on"
+let restAt: ReturnType<typeof setTimeout> | undefined
+const REST_AFTER_MS = 4000 // the last sound (and Sizzle's line after it) has finished by then
 
 function applySession(): void {
   const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession
@@ -85,12 +91,48 @@ export function setAudioSession(type: SessionType): void {
   applySession()
 }
 
+/**
+ * Something is (about to be) waiting on the cook, or nothing is. Called from every tick.
+ * Opening happens ahead of the alarm; closing waits for the last sound to finish.
+ */
+export function setAlarmMode(on: boolean): void {
+  if (on === alarmMode) return
+  alarmMode = on
+  clearTimeout(restAt)
+  if (on) {
+    if (sessionType === SOUNDING) setAudioSession('playback')
+    if (resting) wake()
+  } else {
+    restAt = setTimeout(() => {
+      if (sessionType === 'playback') setAudioSession(SOUNDING)
+      rest()
+    }, REST_AFTER_MS)
+  }
+}
+
+// Sleeping and waking our audio: iOS gives the output back to the music app only when a page
+// stops using it. A context we suspended ourselves counts as sound still being on.
+function rest(): void {
+  if (!ctx || ctx.state !== 'running' || resting) return
+  resting = true
+  ctx.suspend().catch(() => {
+    resting = false
+  })
+}
+
+function wake(): void {
+  if (!ctx || !resting) return
+  resting = false
+  ctx.resume().catch(() => {})
+}
+
 /** Call from a user gesture. Safe (and cheap) to call on every tap. */
 export function unlock(): void {
   const c = context()
   if (!c) return
   applySession()
   if (c.state !== 'running') {
+    resting = false
     c.resume().then(
       () => (soundReady.value = c.state === 'running'),
       () => {},
@@ -120,27 +162,16 @@ export async function play(name: Sfx, fromGesture = false): Promise<void> {
   try {
     if (c.state !== 'running') {
       // After an interruption (phone call, app switch) this is often enough to recover.
+      const wasResting = resting
+      resting = false
       const resuming = c.resume()
-      if (!fromGesture) return void resuming.catch(() => {})
+      if (!fromGesture && !wasResting) return void resuming.catch(() => {})
       await resuming
       if ((c.state as AudioContextState) !== 'running') return
     }
     const source = c.createBufferSource()
     source.buffer = await buffer(c, name)
     source.connect(c.destination)
-    // An alarm (a finish, a flip due, the reminder) borrows the session type that ignores the
-    // silent switch, for exactly as long as it sounds. Beeps and the voice stay polite.
-    const alarm = (name === 'complete' || name === 'notify') && sessionType === SOUNDING
-    if (alarm) {
-      alarmsSounding++
-      setAudioSession('playback')
-      source.onended = () => {
-        if (--alarmsSounding <= 0) {
-          alarmsSounding = 0
-          if (sessionType === 'playback') setAudioSession(SOUNDING)
-        }
-      }
-    }
     source.start()
   } catch {
     /* a missing sound must never break a timer */
@@ -152,7 +183,7 @@ export function installAudio(): void {
   window.addEventListener('pointerdown', unlock, { capture: true, passive: true })
   window.addEventListener('keydown', unlock, { capture: true })
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && ctx && ctx.state !== 'running') {
+    if (document.visibilityState === 'visible' && ctx && ctx.state !== 'running' && !resting) {
       ctx.resume().catch(() => {})
     }
   })

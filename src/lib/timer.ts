@@ -223,6 +223,25 @@ export function isPending(t: Timer): boolean {
   return status === 'alert' || status === 'finished' || status === 'due'
 }
 
+/**
+ * How long until something next needs the cook: the soonest finish, flip or synced start
+ * across every timer, 0 if something already does, Infinity if nothing ever will (all paused
+ * or prepped). The audio uses it to get ready a few seconds before an alarm.
+ */
+export function msUntilNeeded(timers: Timer[], now: number): number {
+  let soonest = Number.POSITIVE_INFINITY
+  for (const t of timers) {
+    if (isPending(t)) return 0
+    const status = statusOf(t)
+    if (status === 'waiting') soonest = Math.min(soonest, waitRemainingMs(t, now))
+    if (status !== 'running') continue
+    const next = nextAlert(t)
+    const elapsed = elapsedMs(t, now)
+    soonest = Math.min(soonest, next ? next.atMs - elapsed : t.durationMs - elapsed)
+  }
+  return Math.max(0, soonest)
+}
+
 // ---- Sync Finish ----
 
 /** Prepped timers that haven't been given a start time yet: the ones Sync Finish works on. A recipe step isn't: its recipe decides when it goes on. */

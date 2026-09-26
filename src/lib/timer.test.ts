@@ -11,6 +11,7 @@ import {
   createTimer,
   displayOrder,
   isPending,
+  msUntilNeeded,
   NO_ALERTS,
   pause,
   pauseAll,
@@ -358,5 +359,23 @@ describe('format', () => {
     expect(parseDuration('abc')).toBeNull()
     expect(parseDuration('0')).toBeNull()
     expect(parseDuration('')).toBeNull()
+  })
+})
+
+describe('msUntilNeeded', () => {
+  it('is the soonest finish, flip or synced start; 0 once something is waiting; never for nothing running', () => {
+    const now = 1_000_000
+    const rice = createTimer('Rice', 10 * MIN, NO_ALERTS, now)
+    const eggs = createTimer('Eggs', 6 * MIN, { kind: 'half', everyMs: 0, label: 'Flip', pause: false }, now)
+    expect(msUntilNeeded([rice, eggs], now)).toBe(3 * MIN) // the eggs' halfway flip
+    expect(msUntilNeeded([rice, eggs], now + 3 * MIN + 1000)).toBe(0) // it's due
+    advance(eggs, now + 3 * MIN + 1000) // fires it
+    expect(msUntilNeeded([rice, eggs], now + 3 * MIN + 1000)).toBe(0) // waiting on the cook
+    acknowledge(eggs, now + 3 * MIN + 1000)
+    expect(msUntilNeeded([rice, eggs], now + 4 * MIN)).toBe(2 * MIN) // the eggs finish before the rice
+    const prepped = createTimer('Later', 5 * MIN, NO_ALERTS, now, true)
+    expect(msUntilNeeded([prepped], now)).toBe(Number.POSITIVE_INFINITY)
+    pause(rice, now + 4 * MIN)
+    expect(msUntilNeeded([rice, prepped], now + 4 * MIN)).toBe(Number.POSITIVE_INFINITY)
   })
 })
