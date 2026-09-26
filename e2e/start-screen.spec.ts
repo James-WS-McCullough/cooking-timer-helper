@@ -110,3 +110,18 @@ test.describe('with a mouse', () => {
     await expect(settings.getByText(/Keep Sizzle open/)).toBeHidden()
   })
 })
+
+test('Settings: alarms cut in by default; "over music" is a switch that sticks', async ({ page }) => {
+  await startTimer(page, 'Rice', 10)
+  await page.getByRole('button', { name: 'Settings' }).click()
+  const settings = page.getByRole('dialog', { name: 'Settings' })
+  const over = settings.getByRole('switch', { name: 'Alarms over music' })
+  await expect(over).toHaveAttribute('aria-checked', 'false')
+  await expect(settings).toContainText('alarms cut in and always sound')
+  await over.click()
+  await expect(over).toHaveAttribute('aria-checked', 'true')
+  await expect(settings).toContainText('Silent switch silences alarms too')
+  await page.reload()
+  await page.getByRole('button', { name: 'Settings' }).click()
+  await expect(page.getByRole('switch', { name: 'Alarms over music' })).toHaveAttribute('aria-checked', 'true')
+})

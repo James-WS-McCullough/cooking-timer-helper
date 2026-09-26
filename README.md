@@ -31,7 +31,7 @@ An installed copy doesn't update silently: when a new version has been deployed,
 Serve `dist/` over **HTTPS** (any static host), open it, then *Share → Add to Home Screen*.
 HTTPS is required for offline support and for keeping the screen awake; plain `http://` over LAN is fine for a quick look but won't have either.
 
-- Sound unlocks on your first tap (the New timer beep does it). If the app is reopened with timers already running, a red banner asks for one tap. Alarms play over whatever else is playing (music, a podcast) rather than stopping it.
+- Sound unlocks on your first tap (the New timer beep does it). If the app is reopened with timers already running, a red banner asks for one tap. iOS won't let a web page both play over music and ignore the silent switch, so Settings has **Alarms over music**: off (the default), alarms cut in a moment before they're due and always sound; on, your music keeps playing and alarms mix over it, but the silent switch silences them too.
 - The screen stays on while anything is counting down. A home-screen web app cannot make sound once the phone is locked or the app is in the background, so leave it open on the counter.
 - Timers are timestamp-based and saved on the device: closing, reloading or sleeping never loses time.
 

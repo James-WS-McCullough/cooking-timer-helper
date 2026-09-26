@@ -83,7 +83,7 @@ export const state = reactive({
 
 // One shared reminder for everything waiting on the cook, however many cards that is.
 const NOTIFY_EVERY_MS = 15_000
-const ALARM_LEAD_MS = 5000
+const ALARM_LEAD_MS = 2000
 let nextNotifyAt = 0
 
 // The robot speaks after the sound effect that announces the same thing, not over it,
@@ -159,8 +159,8 @@ function tick(publish = false): void {
 
   // Anything counting down or waiting on the cook keeps the screen awake.
   setWakeLock(state.timers.some((t) => !['paused', 'prepped'].includes(statusOf(t))))
-  // A few seconds before anything is due, and for as long as anything waits, the alarm must
-  // be able to get through the phone's silent switch (audio.ts).
+  // A moment before anything is due, and for as long as anything waits, the alarm must be
+  // able to get through the phone's silent switch (audio.ts; only if alarms are set to cut in).
   setAlarmMode(msUntilNeeded(state.timers, now) <= ALARM_LEAD_MS)
 }
 

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useDialog } from '../lib/dialog'
 // The few things that aren't about a timer: Sizzle's voice, light/dark, and the QR
 // code. On the start screen they're loose buttons; once timers are running they
 // live here, behind the gear.
+import { alarmStyle, setAlarmStyle } from '../lib/audio'
+import { useDialog } from '../lib/dialog'
 import { theme, toggleTheme } from '../lib/theme'
 import VoiceButton from './VoiceButton.vue'
 
@@ -37,6 +38,28 @@ useDialog(panel, () => emit('close'))
           <strong>{{ theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode' }}</strong>
           <small>Currently {{ theme }}</small>
         </span>
+      </button>
+
+      <!-- iOS can't both play over music and ignore the silent switch: the cook picks. -->
+      <button
+        class="row action"
+        role="switch"
+        :aria-checked="alarmStyle === 'mix'"
+        aria-label="Alarms over music"
+        @click="setAlarmStyle(alarmStyle === 'mix' ? 'interrupt' : 'mix')"
+      >
+        <span class="icon">
+          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 18V6l11-2v12" />
+            <circle cx="6.5" cy="18" r="2.5" />
+            <circle cx="17.5" cy="16" r="2.5" />
+          </svg>
+        </span>
+        <span class="label">
+          <strong>Alarms over music</strong>
+          <small>{{ alarmStyle === 'mix' ? 'On: music keeps playing. Silent switch silences alarms too.' : 'Off: alarms cut in and always sound.' }}</small>
+        </span>
+        <span class="knob" :class="{ on: alarmStyle === 'mix' }" aria-hidden="true" />
       </button>
 
       <button class="row action" @click="emit('recipes')">
@@ -146,6 +169,11 @@ h2 {
   color: var(--text-dim);
 }
 
+.label {
+  flex: 1;
+  min-width: 0;
+}
+
 .label strong,
 .label small {
   display: block;
@@ -154,6 +182,45 @@ h2 {
 .label small {
   color: var(--text-dim);
   font-size: 0.85rem;
+}
+
+/* A switch's state, drawn: a pill with a dot that slides. */
+.knob {
+  flex: none;
+  position: relative;
+  width: 46px;
+  height: 28px;
+  margin-left: auto;
+  border-radius: 14px;
+  background: var(--border);
+  transition: background 0.15s ease;
+}
+
+.knob::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--surface);
+  transition: transform 0.15s ease;
+}
+
+.knob.on {
+  background: var(--accent);
+}
+
+.knob.on::after {
+  transform: translateX(18px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .knob,
+  .knob::after {
+    transition: none;
+  }
 }
 
 .note {
