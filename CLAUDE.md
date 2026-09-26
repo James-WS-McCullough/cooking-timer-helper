@@ -49,7 +49,7 @@ A push to `main` runs check → e2e → build → deploy; a red e2e run blocks t
 - `position: fixed` inside an element with a `transform` (including one mid-transition) is positioned relative to it, not the viewport.
 - `position: sticky` offsets are measured from inside the scroller's padding.
 - Anything that disappears on touch-down shifts the page before touch-up and the tap misses (the sound banner fades first, then folds).
-- Mobile audio: only after a user gesture; iOS needs `navigator.audioSession.type = 'playback'` to ignore the mute switch; a home-screen web app cannot sound while locked or backgrounded, hence the wake lock.
+- Mobile audio: only after a user gesture; iOS's `navigator.audioSession.type` is `'transient'` (mixes with the cook's music, ducking it for a beep; `'playback'` stopped their music every time the app came to the front) and `'play-and-record'` only while the mic records; whether `transient` ignores the mute switch is unverified on a real phone; a home-screen web app cannot sound while locked or backgrounded, hence the wake lock.
 - iOS keyboards don't resize the layout viewport: size sheets from `window.visualViewport`, not `dvh` or media queries.
 - Biome can't see template usage in `.vue` files, so its unused-variable rules are off there; `vue-tsc` covers it.
 

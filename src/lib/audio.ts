@@ -58,10 +58,13 @@ function buffer(c: AudioContext, name: Sfx): Promise<AudioBuffer> {
   return loading
 }
 
-// iOS: without 'playback', Web Audio obeys the ringer switch and a silenced phone stays
-// silent. The mic (src/lib/listen/) needs 'play-and-record' for as long as it's recording.
-type SessionType = 'playback' | 'play-and-record'
-let sessionType: SessionType = 'playback'
+// iOS audio session. 'transient' is what a timer is: short sounds that mix with whatever
+// else is playing (a podcast keeps going, ducked for the beep) rather than 'playback', which
+// is the music-app mode and stopped the cook's music every time Sizzle came to the front. The
+// mic (src/lib/listen/) needs 'play-and-record' for as long as it's recording, then goes back.
+type SessionType = 'transient' | 'play-and-record'
+export const SOUNDING: SessionType = 'transient'
+let sessionType: SessionType = SOUNDING
 
 function applySession(): void {
   const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession

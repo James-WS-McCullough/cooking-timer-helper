@@ -1,7 +1,7 @@
 // The mic: records one utterance through the app's AudioContext and hands back 16 kHz
 // audio. It stops by itself when the cook stops talking (see EndOfSpeech), or when told to.
 
-import { audioContext, setAudioSession } from '../audio'
+import { audioContext, SOUNDING, setAudioSession } from '../audio'
 import { EndOfSpeech, loudness, toSpeechRate, trimSilence } from './capture'
 
 export interface Recording {
@@ -47,7 +47,7 @@ export async function record(onLevel: (level: number) => void): Promise<Recordin
       tapped.add(ctx)
     }
   } catch (err) {
-    setAudioSession('playback')
+    setAudioSession(SOUNDING)
     throw err
   }
 
@@ -74,7 +74,7 @@ export async function record(onLevel: (level: number) => void): Promise<Recordin
     tap.disconnect()
     mute.disconnect()
     for (const track of stream.getTracks()) track.stop()
-    setAudioSession('playback')
+    setAudioSession(SOUNDING)
     onLevel(0)
     settle(keep ? trimSilence(toSpeechRate(chunks, ctx?.sampleRate ?? 48_000)) : null)
   }
