@@ -58,13 +58,16 @@ function buffer(c: AudioContext, name: Sfx): Promise<AudioBuffer> {
   return loading
 }
 
-// iOS audio session. 'transient' is what a timer is: short sounds that mix with whatever
-// else is playing (a podcast keeps going, ducked for the beep) rather than 'playback', which
-// is the music-app mode and stopped the cook's music every time Sizzle came to the front. The
-// mic (src/lib/listen/) needs 'play-and-record' for as long as it's recording, then goes back.
-type SessionType = 'transient' | 'play-and-record'
+// iOS audio session, chosen per moment. 'transient' most of the time: short sounds that mix
+// with whatever else is playing (a podcast keeps going), rather than 'playback', the music-app
+// mode, which stopped the cook's music every time Sizzle came to the front. But 'transient' is
+// silenced by the ring/silent switch and an alarm must get through, so 'playback' is taken for
+// the seconds an alarm sounds, then given back (whether iOS then resumes the music is its
+// business). The mic (src/lib/listen/) needs 'play-and-record' for as long as it records.
+type SessionType = 'transient' | 'playback' | 'play-and-record'
 export const SOUNDING: SessionType = 'transient'
 let sessionType: SessionType = SOUNDING
+let alarmsSounding = 0
 
 function applySession(): void {
   const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession
@@ -125,6 +128,19 @@ export async function play(name: Sfx, fromGesture = false): Promise<void> {
     const source = c.createBufferSource()
     source.buffer = await buffer(c, name)
     source.connect(c.destination)
+    // An alarm (a finish, a flip due, the reminder) borrows the session type that ignores the
+    // silent switch, for exactly as long as it sounds. Beeps and the voice stay polite.
+    const alarm = (name === 'complete' || name === 'notify') && sessionType === SOUNDING
+    if (alarm) {
+      alarmsSounding++
+      setAudioSession('playback')
+      source.onended = () => {
+        if (--alarmsSounding <= 0) {
+          alarmsSounding = 0
+          if (sessionType === 'playback') setAudioSession(SOUNDING)
+        }
+      }
+    }
     source.start()
   } catch {
     /* a missing sound must never break a timer */
