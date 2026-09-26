@@ -17,12 +17,15 @@ import TimerCard from './components/TimerCard.vue'
 import UpdateToast from './components/UpdateToast.vue'
 import VoiceBubble from './components/VoiceBubble.vue'
 import VoiceButton from './components/VoiceButton.vue'
+import WatchPanel from './components/WatchPanel.vue'
+import WatchSheet from './components/WatchSheet.vue'
 import { announcement } from './lib/announce'
 import { play, soundReady } from './lib/audio'
 import { dialogOpen } from './lib/dialog'
 import { isNote, type Recipe, type Step, tails } from './lib/recipe'
 import { theme, toggleTheme } from './lib/theme'
 import { anyPausedByAll, countingTimers, displayOrder, isPending, statusOf, syncable } from './lib/timer'
+import { watching } from './lib/watching'
 import {
   arrivals,
   chainEnd,
@@ -156,6 +159,14 @@ const qrOpen = ref(false)
 
 // While timers run, the start screen's loose buttons (voice, theme, QR) live behind a gear instead.
 const settingsOpen = ref(false)
+
+// Something to watch while cooking: a video beside (or above) the cards.
+const watchOpen = ref(false)
+function openWatch() {
+  void play('beep', true)
+  settingsOpen.value = false
+  watchOpen.value = true
+}
 
 // The beep doubles as the tap that lets the browser sound the alarm later.
 // Prepping a meal: timers are set up and nothing has been started yet. The dock's
@@ -334,6 +345,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </button>
     </Transition>
 
+    <div class="stage" :class="{ watching: watching && !page }">
+      <WatchPanel v-if="!page" class="video" />
     <main :class="{ 'has-timers': cards.length > 0 && !page, 'with-sync': canSync && !page, 'is-page': !!page }">
       <RecipesPage
         v-if="page?.kind === 'recipes'"
@@ -402,6 +415,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </div>
       </Transition>
     </main>
+    </div>
 
     <Transition name="sync">
       <button
@@ -471,6 +485,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </button>
     </Transition>
     <Transition name="welcome">
+      <button v-if="!cards.length && !page" class="corner-button watch-button" aria-label="Watch while you cook" @click="openWatch">
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="6" width="18" height="12" rx="2.5" />
+          <path d="M10 9.5v5l4.5-2.5z" fill="currentColor" stroke="none" />
+        </svg>
+      </button>
+    </Transition>
+    <Transition name="welcome">
       <button v-if="!cards.length && !page" class="corner-button qr-button" aria-label="Show a QR code to open Sizzle on another device" @click="qrOpen = true">
         <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
           <rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1" />
@@ -493,7 +515,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     />
 
     <AlertSheet v-else-if="alertsFor" :key="alertsFor.id" :timer="alertsFor" @close="alertsForId = null" />
-    <SettingsSheet v-if="settingsOpen" @close="settingsOpen = false" @qr="((settingsOpen = false), (qrOpen = true))" @recipes="openRecipes" />
+    <SettingsSheet
+      v-if="settingsOpen"
+      @close="settingsOpen = false"
+      @qr="((settingsOpen = false), (qrOpen = true))"
+      @recipes="openRecipes"
+      @watch="openWatch"
+    />
+    <WatchSheet v-if="watchOpen" @close="watchOpen = false" />
     <QrSheet v-if="qrOpen" @close="qrOpen = false" />
     <SaveRecipeSheet v-if="justFinished" :run="justFinished" @close="justFinished = null" />
   </div>
@@ -692,6 +721,41 @@ h1 {
 
 .theme-button {
   right: calc(max(16px, env(safe-area-inset-right)) + 56px + 10px);
+}
+
+.watch-button {
+  right: calc(max(16px, env(safe-area-inset-right)) + 2 * (56px + 10px));
+}
+
+/* The video and the cards: stacked on a phone (the video stays put at the top while the cards
+   scroll under it), side by side on a wide screen. Nothing is ever drawn over the picture. */
+.stage {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.stage.watching .video {
+  position: sticky;
+  top: calc(8px + env(safe-area-inset-top));
+  z-index: 5;
+  margin-bottom: 12px;
+}
+
+@media (min-width: 900px) {
+  .stage.watching {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(340px, 1fr);
+    gap: 20px;
+    align-items: start;
+  }
+  .stage.watching .video {
+    top: 14px;
+    margin-bottom: 0;
+  }
+  .stage.watching main .grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .dock {
