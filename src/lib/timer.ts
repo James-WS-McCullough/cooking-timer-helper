@@ -17,7 +17,7 @@ export interface TimerAlert {
   atMs: number // cooking time elapsed when this fires
   label: string
   pause: boolean
-  state: 'pending' | 'firing' | 'done'
+  state: 'pending' | 'firing' | 'seen' | 'done' // seen: the cook has noted a holding alert; the timer waits for Continue
   firedAt: number | null // wall-clock moment it went off
 }
 
@@ -42,7 +42,7 @@ export interface Timer {
   step?: StepRef // one step of a recipe being cooked (recipe.ts); Done brings up the next
 }
 
-export type TimerStatus = 'prepped' | 'waiting' | 'due' | 'running' | 'paused' | 'alert' | 'finished'
+export type TimerStatus = 'prepped' | 'waiting' | 'due' | 'running' | 'paused' | 'held' | 'alert' | 'finished'
 
 export const NO_ALERTS: AlertPlan = { kind: 'none', everyMs: 0, label: 'Flip', pause: false }
 
@@ -110,7 +110,7 @@ export function statusOf(t: Timer): TimerStatus {
   if (t.prepped) return t.startAt == null ? 'prepped' : t.due ? 'due' : 'waiting'
   if (t.finishedAt !== null) return 'finished'
   if (firingAlert(t)) return 'alert'
-  if (t.runningSince === null) return 'paused'
+  if (t.runningSince === null) return t.pausedBy === 'alert' ? 'held' : 'paused'
   return 'running'
 }
 
@@ -160,13 +160,27 @@ export function advance(t: Timer, now: number): TimerEvent | null {
   return event
 }
 
-/** Confirm the firing alert ("Flipped"). Resumes the countdown if the alert was holding it. */
+/**
+ * Confirm the firing alert ("Flipped"). If the alert was holding the countdown, the first Done
+ * only marks it seen (the reminders stop, the timer stays held: status 'held'); resuming is
+ * the next press (Continue). An alert that wasn't holding is done in one.
+ */
 export function acknowledge(t: Timer, now: number): void {
-  for (const a of t.alerts) if (a.state === 'firing') a.state = 'done'
+  const firing = firingAlert(t)
+  if (firing && t.pausedBy === 'alert') {
+    firing.state = 'seen'
+    return
+  }
+  for (const a of t.alerts) if (a.state === 'firing' || a.state === 'seen') a.state = 'done'
   if (t.pausedBy === 'alert') {
     t.pausedBy = null
     t.runningSince = now
   }
+}
+
+/** The alert a held timer is waiting on (seen, not yet continued). */
+export function heldAlert(t: Timer): TimerAlert | undefined {
+  return t.alerts.find((a) => a.state === 'seen')
 }
 
 export function pause(t: Timer, now: number): void {
@@ -210,7 +224,7 @@ export function addTime(t: Timer, ms: number, now: number): void {
  */
 export function setPlan(t: Timer, plan: AlertPlan, now: number): void {
   const elapsed = elapsedMs(t, now)
-  const firing = t.alerts.filter((a) => a.state === 'firing')
+  const firing = t.alerts.filter((a) => a.state === 'firing' || a.state === 'seen') // a held clock must still be releasable
   const fresh = buildAlerts(t.durationMs, plan).filter((a) => !firing.some((f) => f.atMs === a.atMs))
   for (const a of fresh) if (a.atMs <= elapsed) a.state = 'done'
   t.plan = { ...plan }
@@ -338,7 +352,7 @@ export function displayOrder<C extends Card>(cards: C[], now: number): C[] {
     if (isNote(c)) return 1
     const status = statusOf(c)
     if (status === 'prepped' && c.step) return 1
-    return { finished: 0, alert: 1, due: 1, running: 2, paused: 2, waiting: 3, prepped: 4 }[status]
+    return { finished: 0, alert: 1, due: 1, running: 2, paused: 2, held: 2, waiting: 3, prepped: 4 }[status]
   }
   const left = (c: Card) => (isNote(c) ? 0 : c.prepped ? (c.startAt ?? 0) : remainingMs(c, now))
   return [...cards].sort((a, b) => rank(a) - rank(b) || left(a) - left(b) || a.createdAt - b.createdAt)

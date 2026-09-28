@@ -15,7 +15,9 @@ useDialog(panel, () => emit('close'))
 
 const name = ref('')
 const box = ref<HTMLInputElement>()
-onMounted(() => requestAnimationFrame(() => box.value?.focus()))
+// After useDialog's own focus (registered first), and in the same tick: a frame later would
+// steal focus back from whatever the cook (or a test) had already moved to.
+onMounted(() => box.value?.focus())
 
 function save() {
   if (!name.value.trim()) return

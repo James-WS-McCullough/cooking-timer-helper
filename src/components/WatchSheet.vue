@@ -12,7 +12,7 @@ useDialog(panel, () => emit('close'))
 
 const link = ref('')
 const box = ref<HTMLInputElement>()
-onMounted(() => requestAnimationFrame(() => box.value?.focus()))
+onMounted(() => box.value?.focus())
 
 const parsed = computed(() => (link.value.trim() ? parseWatchUrl(link.value) : null))
 const problem = computed(() =>

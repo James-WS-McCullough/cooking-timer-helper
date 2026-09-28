@@ -41,9 +41,9 @@ function mention(name: string) {
 watch(
   step,
   (now) => {
-    if (now === 'text') requestAnimationFrame(() => box.value?.focus())
+    if (now === 'text') box.value?.focus()
   },
-  { immediate: true },
+  { immediate: true, flush: 'post' },
 )
 
 function add() {

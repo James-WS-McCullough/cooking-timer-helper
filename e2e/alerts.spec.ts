@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { around, card, clockNear, controlClock, MIN, pass, seed, sheet } from './helpers'
+import { around, card, clockNear, controlClock, MIN, pass, recordSounds, seed, sheet } from './helpers'
 
 test.beforeEach(async ({ page }) => {
   await controlClock(page)
@@ -23,7 +23,13 @@ test('the bell adds a halfway flip that holds the clock until confirmed', async 
   await pass(page, 2 * MIN)
   await expect(flip).toContainText('10:00 left') // held at exactly halfway, not draining
 
-  await flip.getByRole('button', { name: 'Done, Potatoes, resume' }).click()
+  // Done quietens the alarm but keeps the clock held; Continue sets it going again.
+  await flip.getByRole('button', { name: 'Done, Potatoes' }).click()
+  const held = card(page, 'Potatoes')
+  await expect(held).toContainText('Held after the flip')
+  await pass(page, 2 * MIN)
+  await expect(held.getByRole('timer')).toHaveText('10:00') // still held, and no longer nagging
+  await held.getByRole('button', { name: 'Continue Potatoes' }).click()
   await pass(page, MIN)
   await expect(card(page, 'Potatoes').getByRole('timer')).toHaveText(clockNear('9:00'))
 })
@@ -60,4 +66,29 @@ test('None removes the alerts again', async ({ page }) => {
   await sheet(page).getByRole('button', { name: /^None/ }).click()
   await expect(card(page, 'Potatoes')).toContainText('of 20 min')
   await expect(page.getByRole('button', { name: 'Add a flip or stir alert to Potatoes' })).toBeVisible()
+})
+
+test('once a holding flip is seen, the 15-second reminders stop', async ({ page }) => {
+  // (recordSounds has to be installed before the page loads: a fresh page here.)
+  const sounds = await recordSounds(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: /Tap to turn sound on/ }).click()
+  await page.getByRole('button', { name: 'Add a flip or stir alert to Potatoes' }).click()
+  await sheet(page)
+    .getByRole('button', { name: /^Halfway/ })
+    .click()
+  await sheet(page).getByRole('button', { name: 'Set alert' }).click()
+  await expect(card(page, 'Potatoes')).toContainText(/Flip in/)
+  await pass(page, 1000)
+  await sounds() // the taps' beeps, drained
+  await pass(page, 10 * MIN + 1000)
+  expect(await sounds()).toEqual(['Notify'])
+  await pass(page, 16_000)
+  expect(await sounds()).toEqual(['Notify']) // the reminder
+  await card(page, 'Flip Potatoes').getByRole('button', { name: 'Done, Potatoes' }).click()
+  await sounds()
+  await pass(page, 40_000)
+  expect(await sounds()).toEqual([]) // seen: quiet, though still held
+  await card(page, 'Potatoes').getByRole('button', { name: 'Continue Potatoes' }).click()
+  expect(await sounds()).toEqual(['Timer Start'])
 })

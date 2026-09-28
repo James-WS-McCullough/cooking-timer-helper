@@ -17,7 +17,7 @@ const unit = ref(props.ingredient.unit)
 const isNew = !props.ingredient.name
 
 const first = ref<HTMLInputElement>()
-onMounted(() => requestAnimationFrame(() => first.value?.focus()))
+onMounted(() => first.value?.focus()) // in the same tick: a frame later would steal focus from the next field
 
 function save() {
   if (!name.value.trim()) return

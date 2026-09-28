@@ -243,11 +243,17 @@ function withTimer(id: string, fn: (t: Timer, now: number) => void): void {
   tick(true)
 }
 
-/** "Done" on a flip: back to cooking. If the alert was holding the clock, it starts counting again. */
+/**
+ * "Done" on a flip: back to cooking. If the alert was holding the clock, the first press
+ * marks it seen (the reminders stop, the clock stays held) and the next, Continue, starts it
+ * counting again.
+ */
 export const acknowledgeTimer = (id: string) =>
   withTimer(id, (t, now) => {
     acknowledge(t, now)
-    void play('start', true)
+    const held = statusOf(t) === 'held'
+    void play(held ? 'beep' : 'start', true)
+    if (held) announce(`${titleOf(t)} held. Continue when ready`)
   })
 
 /** "Done" on a finished timer. Same confirming sound as any other Done, then the card goes (and the next step comes, if there is one). */

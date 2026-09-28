@@ -78,7 +78,10 @@ describe('pausing flip alert (oven)', () => {
     expect(t.alerts[0].firedAt).toBe(T0 + 20 * MIN)
     expect(remainingMs(t, T0 + 23 * MIN)).toBe(20 * MIN) // held, not draining
 
-    acknowledge(t, T0 + 23 * MIN)
+    acknowledge(t, T0 + 22 * MIN) // seen: quiet, still held
+    expect(statusOf(t)).toBe('held')
+    expect(remainingMs(t, T0 + 23 * MIN)).toBe(20 * MIN)
+    acknowledge(t, T0 + 23 * MIN) // continue
     expect(statusOf(t)).toBe('running')
     advance(t, T0 + 43 * MIN)
     expect(t.finishedAt).toBe(T0 + 43 * MIN)
@@ -174,6 +177,8 @@ describe('setPlan (the bell on a card)', () => {
     advance(t, T0 + 5 * MIN)
     setPlan(t, NO_ALERTS, T0 + 6 * MIN)
     expect(statusOf(t)).toBe('alert')
+    acknowledge(t, T0 + 6 * MIN)
+    expect(statusOf(t)).toBe('held')
     acknowledge(t, T0 + 6 * MIN)
     expect(statusOf(t)).toBe('running')
   })
@@ -377,5 +382,32 @@ describe('msUntilNeeded', () => {
     expect(msUntilNeeded([prepped], now)).toBe(Number.POSITIVE_INFINITY)
     pause(rice, now + 4 * MIN)
     expect(msUntilNeeded([rice, prepped], now + 4 * MIN)).toBe(Number.POSITIVE_INFINITY)
+  })
+})
+
+describe('a holding alert takes two presses: seen, then continue', () => {
+  it('the first Done stops it needing the cook but keeps the clock held; the second resumes', () => {
+    const now = 1_000_000
+    const t = createTimer('Potatoes', 20 * MIN, { kind: 'half', everyMs: 0, label: 'Flip', pause: true }, now)
+    expect(advance(t, now + 10 * MIN + 1000)).toBe('alert')
+    expect(statusOf(t)).toBe('alert')
+    expect(isPending(t)).toBe(true)
+    acknowledge(t, now + 11 * MIN)
+    expect(statusOf(t)).toBe('held')
+    expect(isPending(t)).toBe(false) // no more reminders
+    expect(remainingMs(t, now + 15 * MIN)).toBe(10 * MIN) // still held at halfway
+    acknowledge(t, now + 15 * MIN)
+    expect(statusOf(t)).toBe('running')
+    expect(remainingMs(t, now + 16 * MIN)).toBe(9 * MIN)
+    expect(t.alerts[0]?.state).toBe('done')
+  })
+
+  it('an alert that does not hold is done in one press', () => {
+    const now = 1_000_000
+    const t = createTimer('Sauce', 10 * MIN, { kind: 'every', everyMs: 2 * MIN, label: 'Stir', pause: false }, now)
+    advance(t, now + 2 * MIN + 1000)
+    acknowledge(t, now + 2 * MIN + 1000)
+    expect(statusOf(t)).toBe('running')
+    expect(t.alerts[0]?.state).toBe('done')
   })
 })

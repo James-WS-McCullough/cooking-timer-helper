@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The cook's recipes: a list to scroll, one tap to open one, and a way to start a new one.
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import { formatDuration } from '../../lib/format'
 import { type Recipe, totalMs } from '../../lib/recipe'
 import { newRecipe, state } from '../../store'
@@ -23,7 +23,7 @@ const name = ref('')
 const box = ref<HTMLInputElement>()
 function startNaming() {
   naming.value = true
-  requestAnimationFrame(() => box.value?.focus())
+  void nextTick(() => box.value?.focus())
 }
 function create() {
   if (!name.value.trim()) return

@@ -5,6 +5,7 @@ import { formatClock, formatDuration, formatSince } from '../lib/format'
 import {
   elapsedMs,
   firingAlert,
+  heldAlert,
   nextAlert,
   remainingMs,
   statusOf,
@@ -70,6 +71,7 @@ const hint = computed(() => {
     return 'Ready to start'
   }
   if (status.value === 'paused') return 'Paused'
+  if (status.value === 'held') return `Held after the ${(heldAlert(props.timer)?.label ?? 'flip').toLowerCase()}`
   const next = nextAlert(props.timer)
   if (!next) return `of ${formatDuration(props.timer.durationMs)}`
   return `${next.label} in ${formatClock(next.atMs - elapsedMs(props.timer, props.now))}`
@@ -139,9 +141,8 @@ onBeforeUnmount(() => {
       </template>
       <!-- Synced dish: its pre-timer is up. The cook confirms it's on, and the real timer starts. -->
       <button v-else-if="status === 'due'" class="big" :aria-label="`Start ${title}`" @click="resumeTimer(timer.id)">Start</button>
-      <button v-else class="big" :aria-label="`Done, ${title}${timer.pausedBy === 'alert' ? ', resume' : ''}`" @click="acknowledgeTimer(timer.id)">
-        {{ timer.pausedBy === 'alert' ? 'Done · resume' : 'Done' }}
-      </button>
+      <!-- A holding alert: Done only quietens it; the held card below offers Continue. -->
+      <button v-else class="big" :aria-label="`Done, ${title}`" @click="acknowledgeTimer(timer.id)">Done</button>
     </template>
 
     <template v-else>
@@ -175,6 +176,13 @@ onBeforeUnmount(() => {
         </div>
         <!-- Synced and waiting: it will ask when it's time, but it can go on early -->
         <button v-if="waiting" class="ctl early" :aria-label="`Start ${title} now`" @click="resumeTimer(timer.id)">Start now</button>
+        <!-- Held after a flip the cook has seen: the clock waits for them -->
+        <button v-else-if="status === 'held'" class="ctl go held-go" :aria-label="`Continue ${title}`" @click="acknowledgeTimer(timer.id)">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5Z" fill="currentColor" />
+          </svg>
+          Continue
+        </button>
         <!-- Prepped: nothing to adjust yet, just the way to set it going -->
         <button v-else-if="status === 'prepped'" class="ctl go" :aria-label="`Start ${title}`" @click="resumeTimer(timer.id)">
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
@@ -574,6 +582,19 @@ onBeforeUnmount(() => {
   .headline {
     font-size: 1.3rem;
   }
+}
+
+/* Held after a seen flip: the amber stays as an outline, calm, until Continue. */
+.is-held {
+  border: 2px solid var(--alert);
+}
+
+.ctl.held-go {
+  display: flex;
+  gap: 8px;
+  padding: 0 20px 0 16px;
+  background: var(--alert);
+  color: var(--on-alert);
 }
 
 /* ---- Needs attention: the whole card becomes the signal ---- */
