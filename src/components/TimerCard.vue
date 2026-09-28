@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDialog } from '../lib/dialog'
 import { formatClock, formatDuration, formatSince } from '../lib/format'
 import {
@@ -39,6 +39,37 @@ function remove() {
 
 const hasAlerts = computed(() => props.timer.plan.kind !== 'none')
 
+// ---- Moments: small one-shot animations, each a real element keyed to replay ----
+// A start (a new timer, Start on a prepped one, Continue after a flip): a ring bursts from
+// the clock and the digits pop. Counted so the same card can do it again later.
+const kicks = ref(0)
+watch(
+  () => statusOf(props.timer),
+  (now, was) => {
+    if (now === 'running' && (was === 'prepped' || was === 'held' || was === 'paused' || was === 'due')) kicks.value++
+  },
+)
+onMounted(() => {
+  if (statusOf(props.timer) === 'running' && Date.now() - props.timer.createdAt < 1500) kicks.value++
+})
+
+// +30s: the half minute floats up from the clock.
+const floats = ref<number[]>([])
+let floatSeq = 0
+function more() {
+  extendTimer(props.timer.id, MORE)
+  floats.value.push(++floatSeq)
+}
+const floated = (id: number) => (floats.value = floats.value.filter((f) => f !== id))
+
+// A reminder: the food does what's being asked of it (flips over, stirs round), or nods.
+const motion = computed(() => {
+  if (status.value === 'finished') return 'do-nod'
+  const label = (firingAlert(props.timer)?.label ?? '').toLowerCase()
+  if (/flip|turn/.test(label)) return 'do-flip'
+  if (/stir|whisk|mix/.test(label)) return 'do-stir'
+  return 'do-nod'
+})
 const MIN = 60_000
 const MORE = 30_000 // the one "bit longer" step; tap it as many times as needed
 
@@ -122,7 +153,7 @@ onBeforeUnmount(() => {
       <!-- Re-created on every reminder sound, which replays its one-shot animation. -->
       <span :key="pulse" class="shimmer" aria-hidden="true" />
       <header class="top">
-        <FoodIcon :name="timer.name" class="icon" />
+        <FoodIcon :key="pulse" :name="timer.name" class="icon" :class="motion" />
         <h2 class="headline">{{ headline }}</h2>
         <span class="note tabular">{{ pendingNote }}</span>
       </header>
@@ -136,7 +167,7 @@ onBeforeUnmount(() => {
         </span>
         <div class="finish">
           <button class="big" :aria-label="`Done, ${title}`" @click="completeTimer(timer.id)">Done</button>
-          <button class="ghost" :aria-label="`30 seconds more for ${title}`" @click="extendTimer(timer.id, MORE)">+30s</button>
+          <button class="ghost" :aria-label="`30 seconds more for ${title}`" @click="more">+30s</button>
         </div>
       </template>
       <!-- Synced dish: its pre-timer is up. The cook confirms it's on, and the real timer starts. -->
@@ -146,6 +177,7 @@ onBeforeUnmount(() => {
     </template>
 
     <template v-else>
+      <span v-if="status === 'held'" class="settle" aria-hidden="true" />
       <header class="top">
         <FoodIcon :name="timer.name" class="icon" />
         <h2 class="name">{{ title }}</h2>
@@ -167,7 +199,10 @@ onBeforeUnmount(() => {
       <div class="main">
         <!-- Changes every second: must never be read aloud on its own. -->
         <div class="reading">
-          <p class="clock tabular" :class="{ long: clock >= 60 * MIN }" role="timer" aria-live="off">
+          <!-- A start: the ring, then the digits pop. Keyed so each start replays them. -->
+          <span v-if="kicks" :key="kicks" class="ring" aria-hidden="true" />
+          <span v-for="f in floats" :key="f" class="float tabular" aria-hidden="true" @animationend="floated(f)">+0:30</span>
+          <p :key="kicks" class="clock tabular" :class="{ long: clock >= 60 * MIN, kicked: kicks > 0 }" role="timer" aria-live="off">
             <small v-if="waiting">Start in</small>
             {{ formatClock(clock) }}
           </p>
@@ -191,7 +226,7 @@ onBeforeUnmount(() => {
           Start
         </button>
         <span v-else class="actions">
-          <button class="ctl more" :aria-label="`30 seconds more for ${title}`" @click="extendTimer(timer.id, MORE)">+30s</button>
+          <button class="ctl more" :aria-label="`30 seconds more for ${title}`" @click="more">+30s</button>
           <button v-if="status === 'running'" class="ctl" :aria-label="`Pause ${title}`" @click="pauseTimer(timer.id)">
             <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
               <rect x="5" y="4" width="5" height="16" rx="1.5" fill="currentColor" />
@@ -235,6 +270,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 6px;
   padding: 10px 16px 14px;
+  overflow: hidden; /* the start's ring bursts out past the clock, not past the card */
   border-radius: var(--radius);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -584,6 +620,148 @@ onBeforeUnmount(() => {
   }
 }
 
+/* ---- Moments ---- */
+
+/* A seen flip settles from amber to calm: a wash of the old colour that fades. (An overlay,
+   not a transition on the card: the card's transition belongs to the list's move animation.) */
+.settle {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: var(--alert);
+  pointer-events: none;
+  animation: settle 0.5s ease-out forwards;
+}
+
+@keyframes settle {
+  to {
+    opacity: 0;
+  }
+}
+
+.reading {
+  position: relative;
+}
+
+/* A start: a ring bursts out from the clock. */
+.ring {
+  position: absolute;
+  top: 50%;
+  left: 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 3px solid var(--accent);
+  opacity: 0;
+  pointer-events: none;
+  animation: burst 0.7s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+
+@keyframes burst {
+  0% {
+    opacity: 0.9;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(7);
+  }
+}
+
+.clock.kicked {
+  animation: kick 0.45s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+@keyframes kick {
+  0% {
+    transform: scale(0.9);
+  }
+  60% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* +30s: the half minute floats up out of the clock and fades. */
+.float {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin-left: 8px;
+  color: var(--accent-text);
+  font-size: 1.1rem;
+  font-weight: 800;
+  pointer-events: none;
+  animation: float-up 0.9s ease-out forwards;
+}
+
+@keyframes float-up {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-28px);
+  }
+}
+
+/* A reminder: the food does what it's told. */
+.icon.do-flip {
+  animation: flip-over 0.7s cubic-bezier(0.3, 1.2, 0.5, 1) 0.15s both;
+}
+
+.icon.do-stir {
+  animation: stir-round 0.9s ease-in-out 0.15s both;
+}
+
+.icon.do-nod {
+  animation: nod 0.6s cubic-bezier(0.3, 1.6, 0.5, 1) 0.15s both;
+}
+
+@keyframes flip-over {
+  0% {
+    transform: perspective(60px) rotateY(0) translateY(0);
+  }
+  50% {
+    transform: perspective(60px) rotateY(180deg) translateY(-8px);
+  }
+  100% {
+    transform: perspective(60px) rotateY(360deg) translateY(0);
+  }
+}
+
+@keyframes stir-round {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0);
+  }
+  25% {
+    transform: translate(3px, -2px) rotate(12deg);
+  }
+  50% {
+    transform: translate(0, 2px) rotate(0);
+  }
+  75% {
+    transform: translate(-3px, -2px) rotate(-12deg);
+  }
+}
+
+@keyframes nod {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  40% {
+    transform: translateY(-6px) scale(1.15);
+  }
+}
+
 /* Held after a seen flip: the amber stays as an outline, calm, until Continue. */
 .is-held {
   border: 2px solid var(--alert);
@@ -807,8 +985,20 @@ onBeforeUnmount(() => {
     display: none;
   }
   .shimmer,
-  .shimmer::before {
+  .shimmer::before,
+  .ring,
+  .clock.kicked,
+  .float,
+  .icon.do-flip,
+  .icon.do-stir,
+  .icon.do-nod {
     animation: none;
+  }
+  .float {
+    display: none;
+  }
+  .settle {
+    display: none;
   }
   .shimmer::before {
     display: none;

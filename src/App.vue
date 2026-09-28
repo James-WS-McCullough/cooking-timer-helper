@@ -943,13 +943,13 @@ h1 {
 
 .cards-enter-active {
   transition:
-    transform 0.3s ease,
+    transform 0.45s cubic-bezier(0.3, 1.5, 0.5, 1),
     opacity 0.2s ease;
 }
 
 .cards-enter-from {
   opacity: 0;
-  transform: scale(0.94);
+  transform: scale(0.88) translateY(10px);
 }
 
 /* The leave animation itself belongs to the card (TimerCard.vue). */
