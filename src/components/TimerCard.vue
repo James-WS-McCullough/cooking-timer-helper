@@ -199,10 +199,10 @@ onBeforeUnmount(() => {
       <div class="main">
         <!-- Changes every second: must never be read aloud on its own. -->
         <div class="reading">
-          <!-- A start: the ring, then the digits pop. Keyed so each start replays them. -->
-          <span v-if="kicks" :key="kicks" class="ring" aria-hidden="true" />
           <span v-for="f in floats" :key="f" class="float tabular" aria-hidden="true" @animationend="floated(f)">+0:30</span>
+          <!-- A start: the ring bursts from the middle of the digits, which pop. Keyed so each start replays them. -->
           <p :key="kicks" class="clock tabular" :class="{ long: clock >= 60 * MIN, kicked: kicks > 0 }" role="timer" aria-live="off">
+            <span v-if="kicks" class="ring" aria-hidden="true" />
             <small v-if="waiting">Start in</small>
             {{ formatClock(clock) }}
           </p>
@@ -643,11 +643,15 @@ onBeforeUnmount(() => {
   position: relative;
 }
 
-/* A start: a ring bursts out from the clock. */
+/* A start: a ring bursts out from the middle of the digits. */
+.clock {
+  position: relative;
+}
+
 .ring {
   position: absolute;
   top: 50%;
-  left: 24px;
+  left: 50%;
   width: 24px;
   height: 24px;
   border-radius: 50%;
