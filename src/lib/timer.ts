@@ -199,6 +199,25 @@ export function resume(t: Timer, now: number): void {
   t.runningSince = now
 }
 
+/**
+ * Take cooking time off what's left. If that's all of it, the timer finishes now, through the
+ * usual finish (the next advance() reports it, with its sound), even from paused: that's how a
+ * step is skipped. Alerts that would now fall after the end are dropped.
+ */
+export function removeTime(t: Timer, ms: number, now: number): void {
+  if (t.finishedAt !== null || t.prepped) return
+  const elapsed = elapsedMs(t, now)
+  t.durationMs = Math.max(elapsed, t.durationMs - ms)
+  t.alerts = t.alerts.filter((a) => a.state !== 'pending' || a.atMs < t.durationMs)
+  if (t.durationMs <= elapsed) {
+    // Out of time: let advance() finish it now, paused or not.
+    t.elapsedMs = elapsed
+    t.runningSince = now
+    t.pausedBy = null
+    for (const a of t.alerts) if (a.state === 'firing' || a.state === 'seen') a.state = 'done'
+  }
+}
+
 /** Add cooking time. A finished timer starts running again ("needs another minute"). */
 export function addTime(t: Timer, ms: number, now: number): void {
   const before = elapsedMs(t, now)

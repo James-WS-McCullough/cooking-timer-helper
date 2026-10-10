@@ -103,3 +103,14 @@ test('Pause all is only offered once more than one thing is counting', async ({ 
   await expect(card(page, 'Rice')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Pause all' })).toBeHidden()
 })
+
+test('−30s takes time off; with 30s or less left it becomes Skip and finishes the timer now', async ({ page }) => {
+  await controlClock(page)
+  await seed(page, { timers: [{ name: 'Rice', minutes: 1 }] })
+  await page.goto('/')
+  const rice = card(page, 'Rice')
+  await rice.getByRole('button', { name: '30 seconds less for Rice' }).click()
+  await expect(rice.getByRole('timer')).toHaveText(clockNear('0:30'))
+  await rice.getByRole('button', { name: 'Finish Rice now' }).click() // the same button, now a skip
+  await expect(card(page, 'Rice ready')).toBeVisible()
+})

@@ -114,6 +114,10 @@ When a chain you built while cooking is done, Sizzle asks whether to keep it as 
 
 **The recipe pages** (tap a recipe in the list) replace the timer list rather than floating over it, since a recipe is a document, not a decision: one page for how many it serves (a stepper, which scales the amounts) and the ingredients, with one Prep button; and a Steps page with the graph and room to work on it. Ingredients come from the list (+ Add an ingredient) or from the instructions: write `Add [Diced chicken]` and "Diced chicken" joins the list, tap it to say how much; when writing an instruction the recipe's ingredients are chips, one tap to name one; the instruction card then reads "Add **300 g diced chicken**", scaled to the servings chosen. The graph shows what waits for what. Tapping a step offers to add a step after it (a branch, when it already has one) or remove it; "+ Next step" on a card adds after *everything* currently at the end, which is how two branches join. When a fork's steps come up together they are all simply ready to start, each when it suits the cook (the engine can line branches up to finish together, `forkDelays`, but the app doesn't). Engine: `src/lib/recipe.ts` (steps, runs, layout, fork delays), `src/lib/ingredients.ts` (brackets, scaling, "1½ tbsp"); both pure and tested.
 
+## More or less time
+
+Each running card has **−30s** and **+30s**; tap either as often as needed. With 30 seconds or less left, −30s becomes **Skip** and finishes the timer now, with the usual finish: in a recipe, Done then brings up the next step, so a step can be cut short or skipped.
+
 ## A flip that holds the clock
 
 An alert set to hold the timer (the oven default) fires, the card turns amber and the reminder sounds every 15 seconds. **Done** means "I've seen it": the reminders stop and the clock stays held, with the card outlined in amber and one button, **Continue**, to start it counting again when the flip is actually done. An alert that doesn't hold the clock is a single Done.

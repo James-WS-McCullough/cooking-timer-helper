@@ -35,6 +35,7 @@ import {
   msUntilNeeded,
   pause,
   pauseAll,
+  removeTime,
   resume,
   resumeAll,
   setPlan,
@@ -514,6 +515,13 @@ export const setTimerPlan = (id: string, plan: AlertPlan) =>
   withTimer(id, (t, now) => {
     setPlan(t, plan, now)
     if (plan.kind !== 'none') rehearse(alertPhrase(t, plan.label))
+    void play('beep', true)
+  })
+
+/** −30s: less time left, or (with less than that left) done now, which is how a step is skipped. */
+export const shortenTimer = (id: string, ms: number) =>
+  withTimer(id, (t, now) => {
+    removeTime(t, ms, now)
     void play('beep', true)
   })
 

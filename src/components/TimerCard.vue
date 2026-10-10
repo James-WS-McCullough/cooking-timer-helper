@@ -21,6 +21,7 @@ import {
   removeRun,
   removeTimer,
   resumeTimer,
+  shortenTimer,
   stepsAfter,
 } from '../store'
 import FoodIcon from './FoodIcon.vue'
@@ -54,13 +55,20 @@ onMounted(() => {
 })
 
 // +30s: the half minute floats up from the clock.
-const floats = ref<number[]>([])
 let floatSeq = 0
+const floats = ref<{ id: number; text: string }[]>([])
 function more() {
   extendTimer(props.timer.id, MORE)
-  floats.value.push(++floatSeq)
+  floats.value.push({ id: ++floatSeq, text: '+0:30' })
 }
-const floated = (id: number) => (floats.value = floats.value.filter((f) => f !== id))
+// −30s: with that little left, it's a skip (the timer finishes now).
+const skips = computed(() => remaining.value <= MORE)
+function less() {
+  const skipping = skips.value
+  shortenTimer(props.timer.id, MORE)
+  if (!skipping) floats.value.push({ id: ++floatSeq, text: '−0:30' })
+}
+const floated = (id: number) => (floats.value = floats.value.filter((f) => f.id !== id))
 
 // A reminder: the food does what's being asked of it (flips over, stirs round), or nods.
 const motion = computed(() => {
@@ -199,7 +207,7 @@ onBeforeUnmount(() => {
       <div class="main">
         <!-- Changes every second: must never be read aloud on its own. -->
         <div class="reading">
-          <span v-for="f in floats" :key="f" class="float tabular" aria-hidden="true" @animationend="floated(f)">+0:30</span>
+          <span v-for="f in floats" :key="f.id" class="float tabular" aria-hidden="true" @animationend="floated(f.id)">{{ f.text }}</span>
           <!-- A start: the ring bursts from the middle of the digits, which pop. Keyed so each start replays them. -->
           <p :key="kicks" class="clock tabular" :class="{ long: clock >= 60 * MIN, kicked: kicks > 0 }" role="timer" aria-live="off">
             <span v-if="kicks" class="ring" aria-hidden="true" />
@@ -226,6 +234,7 @@ onBeforeUnmount(() => {
           Start
         </button>
         <span v-else class="actions">
+          <button class="ctl less" :aria-label="skips ? `Finish ${title} now` : `30 seconds less for ${title}`" @click="less">{{ skips ? 'Skip' : '−30s' }}</button>
           <button class="ctl more" :aria-label="`30 seconds more for ${title}`" @click="more">+30s</button>
           <button v-if="status === 'running'" class="ctl" :aria-label="`Pause ${title}`" @click="pauseTimer(timer.id)">
             <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
@@ -537,8 +546,9 @@ onBeforeUnmount(() => {
   font-weight: 650;
 }
 
-.ctl.more {
-  min-width: 72px;
+.ctl.more,
+.ctl.less {
+  min-width: 64px;
 }
 
 .ctl.play {
@@ -601,7 +611,9 @@ onBeforeUnmount(() => {
   .actions {
     gap: 5px;
   }
-  .ctl {
+  .ctl,
+  .ctl.more,
+  .ctl.less {
     min-width: 44px;
     padding: 0 6px;
     font-size: 0.95rem;

@@ -18,7 +18,7 @@ A push to `main` runs check → e2e → build → deploy; a red e2e run blocks t
 
 ## Design rules (decided with the owner; don't relitigate them)
 
-- **Fast to start, configure afterwards.** A timer is three taps: New timer → name → time. Optional things (alerts) live on the running card (the bell), not in the wizard. No edit flow, no −30s: cooking only ever needs *more* time (+30s, tap it repeatedly).
+- **Fast to start, configure afterwards.** A timer is three taps: New timer → name → time. Optional things (alerts) live on the running card (the bell), not in the wizard. No edit flow. +30s and −30s sit side by side (tap repeatedly); −30s with 30s or less left reads Skip and finishes the timer now through the usual finish (`removeTime` in the engine), which is how a recipe step is skipped. (−30s was once declined; the owner asked for it on 2026-10-10 for multi-step recipes.)
 - **One decision per screen.** Flows are sequential screens where a tap moves forward by itself, never a scrolling form. Every step must fit without scrolling on an iPhone SE (375×667), and search must work with the keyboard up on a landscape iPad mini (~340px visible).
 - **Shortest label that still says it.** One-word food names first ("Turkey" before "Roast turkey"); typed all-lowercase names get a capital.
 - **Minimal chrome.** No header. The utilities (Sizzle's voice, theme, QR) are loose buttons on the empty start screen; while timers run they sit behind one quiet sliders icon in a slim strip that scrolls with the list (a pinned corner button would end up over a card's bell and ✕). Anything new of that kind goes in that sheet, not on the timer screen. Solve technical needs invisibly (the New timer beep is what unlocks audio).

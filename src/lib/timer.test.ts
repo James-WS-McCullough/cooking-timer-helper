@@ -16,6 +16,7 @@ import {
   pause,
   pauseAll,
   remainingMs,
+  removeTime,
   resume,
   resumeAll,
   setPlan,
@@ -409,5 +410,34 @@ describe('a holding alert takes two presses: seen, then continue', () => {
     acknowledge(t, now + 2 * MIN + 1000)
     expect(statusOf(t)).toBe('running')
     expect(t.alerts[0]?.state).toBe('done')
+  })
+})
+
+describe('removeTime (−30s)', () => {
+  it('takes time off what is left, and drops alerts that would now fall after the end', () => {
+    const now = 1_000_000
+    const t = createTimer('Rice', 10 * MIN, { kind: 'every', everyMs: 3 * MIN, label: 'Stir', pause: false }, now)
+    removeTime(t, 30_000, now + MIN)
+    expect(remainingMs(t, now + MIN)).toBe(8.5 * MIN)
+    removeTime(t, 2 * MIN, now + MIN)
+    expect(t.durationMs).toBe(7.5 * MIN)
+    expect(t.alerts.map((a) => a.atMs)).toEqual([3 * MIN, 6 * MIN])
+  })
+
+  it('with less than that left, the timer finishes now, through the usual finish, even when paused', () => {
+    const now = 1_000_000
+    const t = createTimer('Eggs', MIN, NO_ALERTS, now)
+    pause(t, now + 40_000)
+    removeTime(t, 30_000, now + 50_000)
+    expect(advance(t, now + 50_000)).toBe('finished')
+    expect(t.finishedAt).toBe(now + 50_000)
+    expect(statusOf(t)).toBe('finished')
+  })
+
+  it('does nothing to a finished or prepped timer', () => {
+    const now = 1_000_000
+    const p = createTimer('Later', 5 * MIN, NO_ALERTS, now, true)
+    removeTime(p, 30_000, now)
+    expect(p.durationMs).toBe(5 * MIN)
   })
 })
