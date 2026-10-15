@@ -5,7 +5,7 @@ import { seed, startTimer } from './helpers'
 test.beforeEach(async ({ page }) => {
   await page
     .context()
-    .route(/youtube-nocookie\.com|player\.twitch\.tv/, (route) =>
+    .route(/youtube\.com\/embed|player\.twitch\.tv/, (route) =>
       route.fulfill({ contentType: 'text/html', body: '<title>stub</title><p>video</p>' }),
     )
 })
@@ -22,14 +22,14 @@ test('a YouTube link from Settings puts the video above the cards, with the card
   await link.fill('https://vimeo.com/1')
   await expect(sheet.getByRole('alert')).toContainText('Only YouTube and Twitch')
   await link.fill('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=1s')
-  await sheet.getByRole('button', { name: 'Watch · YouTube' }).click()
+  await sheet.getByRole('button', { name: 'Watch · YouTube · from 0:01' }).click()
   await expect(sheet).toBeHidden()
 
-  const video = page.getByRole('region', { name: 'Watching: YouTube' })
+  const video = page.getByRole('region', { name: 'Watching: YouTube · from 0:01' })
   await expect(video).toBeVisible()
   await expect(video.locator('iframe')).toHaveAttribute(
     'src',
-    'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?playsinline=1&rel=0',
+    'https://www.youtube.com/embed/dQw4w9WgXcQ?playsinline=1&rel=0&start=1', // the link's t=1s
   )
   await page.getByRole('button', { name: '30 seconds more for Rice' }).click() // the cards are still there to use
   await video.getByRole('button', { name: 'Stop watching' }).click()
@@ -38,8 +38,8 @@ test('a YouTube link from Settings puts the video above the cards, with the card
   // The link is remembered, and offered back next time.
   await page.getByRole('button', { name: 'Settings' }).click()
   await page.getByRole('button', { name: /Watch while you cook/ }).click()
-  await sheet.getByRole('button', { name: 'Last time: YouTube' }).click()
-  await expect(page.getByRole('region', { name: 'Watching: YouTube' })).toBeVisible()
+  await sheet.getByRole('button', { name: 'Last time: YouTube · from 0:01' }).click()
+  await expect(page.getByRole('region', { name: 'Watching: YouTube · from 0:01' })).toBeVisible()
 })
 
 test('a Twitch channel from the start screen, and the site tells Twitch who is embedding', async ({ page }) => {
